@@ -2,55 +2,14 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-#[derive(Debug, Clone, Deserialize)]
-struct Config {
-    log: LogConfig,
-    runtime: RuntimeConfig,
-}
+use crate::config::{load_config, LogConfig};
 
-#[derive(Debug, Clone, Deserialize)]
-struct LogConfig {
-    level: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct RuntimeConfig {
-    shutdown_timeout_sec: u64,
-}
-
-fn load_config(path: Option<&PathBuf>) -> Result<Config> {
-    let raw = match path {
-        Some(p) => std::fs::read_to_string(p)
-            .with_context(|| format!("read config file {}", p.display()))?,
-        None => String::new(),
-    };
-    let cfg: Config = if raw.trim().is_empty() {
-        serde_yaml::from_str(include_str!("../config/default.yaml"))
-            .context("parse embedded default config")?
-    } else {
-        serde_yaml::from_str(&raw).context("parse config file")?
-    };
-
-    Ok(apply_env_overrides(cfg))
-}
-
-fn apply_env_overrides(mut cfg: Config) -> Config {
-    if let Ok(level) = std::env::var("DEMON_LOG_LEVEL") {
-        cfg.log.level = level;
-    }
-    if let Ok(t) = std::env::var("DEMON_SHUTDOWN_TIMEOUT_SEC") {
-        if let Ok(parsed) = t.parse() {
-            cfg.runtime.shutdown_timeout_sec = parsed;
-        }
-    }
-    cfg
-}
+mod config;
 
 fn init_logging(cfg: &LogConfig) -> Result<()> {
     let filter = EnvFilter::try_new(&cfg.level).context("parse log level")?;
@@ -65,26 +24,96 @@ fn init_logging(cfg: &LogConfig) -> Result<()> {
     Ok(())
 }
 
+fn print_usage() {
+    println!(
+        "demon-tmp-dotdir-watcher\n\
+         \n\
+         Usage: demon-tmp-dotdir-watcher [OPTIONS] [CONFIG_PATH]\n\
+         \n\
+         Options:\n\
+           --validate-config [CONFIG_PATH]  Load + validate config; exit 0 on success, non-zero on failure.\n\
+           --dry-run                        Load config and walk the candidate tree without quarantining.\n\
+           --help, -h                       Show this help.\n\
+         \n\
+         When CONFIG_PATH is omitted, the embedded default config is used.\n\
+         \n\
+         Env overrides:\n\
+           DEMON_LOG_LEVEL\n\
+           DEMON_SHUTDOWN_TIMEOUT_SEC\n\
+           DEMON_PATHS__SCAN_MAXDEPTH\n\
+           DEMON_PATHS__SCAN_WINDOW_MINUTES\n\
+           DEMON_PATHS__SCAN_ROOTS (colon-separated)\n\
+           DEMON_IOC__IOC_LIST\n\
+           DEMON_IOC__IOC_ARCHIVE_REF\n\
+           DEMON_ALLOWLIST__ALLOWLIST\n\
+           DEMON_ALLOWLIST__MAX_FILES_PER_DIR\n\
+           DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH\n\
+           DEMON_ACTIONS__ALERT_ON_UNKNOWN"
+    );
+}
+
+fn parse_args() -> CliArgs {
+    let mut args = std::env::args().skip(1);
+    let mut cli = CliArgs::default();
+    while let Some(a) = args.next() {
+        match a.as_str() {
+            "--help" | "-h" => cli.help = true,
+            "--validate-config" => {
+                cli.validate_config = true;
+                cli.config_path = args.next().map(PathBuf::from);
+            }
+            "--dry-run" => {
+                cli.dry_run = true;
+                cli.config_path = args.next().map(PathBuf::from);
+            }
+            other if !other.starts_with("--") && !other.starts_with('-') => {
+                cli.config_path = Some(PathBuf::from(other));
+            }
+            _ => {}
+        }
+    }
+    cli
+}
+
+#[derive(Default)]
+struct CliArgs {
+    help: bool,
+    validate_config: bool,
+    dry_run: bool,
+    config_path: Option<PathBuf>,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
-    let cfg_path = std::env::args()
-        .nth(1)
-        .filter(|a| a != "--help" && a != "-h")
-        .map(PathBuf::from);
+    let cli = parse_args();
 
-    if std::env::args().any(|a| a == "--help" || a == "-h") {
-        println!(
-            "rust_demon_template\n\
-             \n\
-             Usage: rust_demon_template [CONFIG_PATH]\n\
-             \n\
-             Env overrides:\n  DEMON_LOG_LEVEL\n  DEMON_SHUTDOWN_TIMEOUT_SEC"
-        );
+    if cli.help {
+        print_usage();
         return Ok(());
     }
 
-    let cfg = load_config(cfg_path.as_ref())?;
+    if cli.validate_config {
+        let cfg = load_config(cli.config_path.as_ref())?;
+        match cfg.validate() {
+            Ok(()) => {
+                println!("OK");
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("validation failed: {e:#}");
+                std::process::exit(1);
+            }
+        }
+    }
+
+    let cfg = load_config(cli.config_path.as_ref())?;
+    cfg.validate().context("config validation")?;
     init_logging(&cfg.log)?;
+
+    if cli.dry_run {
+        info!("dry-run: skipping boot loop (subsystem wiring lands in AR-008)");
+        return Ok(());
+    }
 
     info!(version = env!("CARGO_PKG_VERSION"), "boot: daemon started");
 
@@ -136,7 +165,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn load_embedded_default_config() {
+    fn load_embedded_default_config_via_main_module() {
         let cfg = load_config(None).expect("default config must parse");
         assert!(cfg.runtime.shutdown_timeout_sec > 0);
     }
