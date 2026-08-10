@@ -10,6 +10,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::{load_config, LogConfig};
 
 mod config;
+mod ioc;
 mod subsystem;
 
 fn init_logging(cfg: &LogConfig) -> Result<()> {
