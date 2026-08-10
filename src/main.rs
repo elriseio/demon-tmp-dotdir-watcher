@@ -76,7 +76,10 @@ fn parse_args() -> CliArgs {
             other if !other.starts_with("--") && !other.starts_with('-') => {
                 cli.config_path = Some(PathBuf::from(other));
             }
-            _ => {}
+            unknown => {
+                eprintln!("unknown flag: {unknown}");
+                std::process::exit(2);
+            }
         }
     }
     cli
@@ -160,8 +163,7 @@ async fn run(mut shutdown: watch::Receiver<bool>, _shutdown_timeout: Duration) -
                 }
             }
             _ = tick.tick() => {
-                // TODO: replace this placeholder with the actual subsystem side effect.
-                info!("tick: placeholder heartbeat");
+                // AR-008 will replace this with the subsystem tick body.
             }
         }
     }
