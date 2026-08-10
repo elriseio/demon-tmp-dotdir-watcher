@@ -22,7 +22,7 @@ pub enum SkipReason {
 }
 
 pub fn walk(cfg: &Config) -> Vec<Candidate> {
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(cfg.paths.scan_roots.len());
     let window = Duration::from_secs(cfg.paths.scan_window_minutes as u64 * 60);
     let now = SystemTime::now();
     let max_depth = cfg.paths.scan_maxdepth;
