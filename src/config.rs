@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -90,7 +90,7 @@ impl Config {
     }
 }
 
-pub fn load_config(path: Option<&PathBuf>) -> Result<Config> {
+pub fn load_config(path: Option<&Path>) -> Result<Config> {
     let raw = match path {
         Some(p) => std::fs::read_to_string(p)
             .with_context(|| format!("read config file {}", p.display()))?,

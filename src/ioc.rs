@@ -94,43 +94,11 @@ pub fn is_valid_sha256_hex(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_util::TempFile;
     use std::fs;
-    use std::path::PathBuf;
-    use std::time::SystemTime;
 
     const VALID_HASH: &str =
         "db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c";
-
-    struct TempFile(PathBuf);
-
-    impl TempFile {
-        fn with_content(label: &str, content: &[u8]) -> Self {
-            let pid = std::process::id();
-            let nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let path = std::env::temp_dir().join(format!(
-                "demon_ioc_{}_{}_{}_{}",
-                label,
-                pid,
-                nanos,
-                std::any::type_name::<Self>()
-            ));
-            fs::write(&path, content).expect("write temp file");
-            Self(path)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempFile {
-        fn drop(&mut self) {
-            let _ = fs::remove_file(&self.0);
-        }
-    }
 
     #[test]
     fn is_valid_sha256_hex_truth_table() {

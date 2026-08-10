@@ -1,3 +1,5 @@
+#![warn(clippy::correctness)]
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -12,6 +14,9 @@ use crate::config::{load_config, LogConfig};
 mod config;
 mod ioc;
 mod subsystem;
+
+#[cfg(test)]
+mod test_util;
 
 fn init_logging(cfg: &LogConfig) -> Result<()> {
     let filter = EnvFilter::try_new(&cfg.level).context("parse log level")?;
@@ -95,7 +100,7 @@ async fn main() -> Result<()> {
     }
 
     if cli.validate_config {
-        let cfg = load_config(cli.config_path.as_ref())?;
+        let cfg = load_config(cli.config_path.as_deref())?;
         match cfg.validate() {
             Ok(()) => {
                 println!("OK");
@@ -108,7 +113,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    let cfg = load_config(cli.config_path.as_ref())?;
+    let cfg = load_config(cli.config_path.as_deref())?;
     cfg.validate().context("config validation")?;
     init_logging(&cfg.log)?;
 

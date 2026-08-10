@@ -10,7 +10,6 @@ use crate::config::Config;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub path: PathBuf,
-    pub basename: String,
     pub entries: Vec<PathBuf>,
     pub skipped_reason: Option<SkipReason>,
 }
@@ -69,7 +68,6 @@ fn walk_recursive(
                     let (entries, skipped) = collect_entries(dir, max_files);
                     out.push(Candidate {
                         path: dir.to_path_buf(),
-                        basename,
                         entries,
                         skipped_reason: skipped,
                     });
@@ -83,7 +81,6 @@ fn walk_recursive(
                 );
                 out.push(Candidate {
                     path: dir.to_path_buf(),
-                    basename,
                     entries: Vec::new(),
                     skipped_reason: Some(SkipReason::IoError(e.to_string())),
                 });
@@ -171,39 +168,9 @@ mod tests {
         ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig,
         RuntimeConfig,
     };
+    use crate::test_util::TempDir;
     use std::fs::{self, File};
     use std::path::PathBuf;
-
-    struct TempDir(PathBuf);
-
-    impl TempDir {
-        fn new(label: &str) -> Self {
-            let pid = std::process::id();
-            let nanos = SystemTime::now()
-                .duration_since(SystemTime::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0);
-            let dir = std::env::temp_dir().join(format!(
-                "demon_subsystem_{}_{}_{}_{}",
-                label,
-                pid,
-                nanos,
-                std::any::type_name::<Self>()
-            ));
-            fs::create_dir_all(&dir).expect("create tempdir");
-            Self(dir)
-        }
-
-        fn path(&self) -> &Path {
-            &self.0
-        }
-    }
-
-    impl Drop for TempDir {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
 
     fn set_mtime(path: &Path, t: SystemTime) {
         let f = File::open(path)
@@ -258,7 +225,15 @@ mod tests {
         let cfg = make_config(vec![root.to_path_buf()], 3, 60, 10);
         let result = walk(&cfg);
 
-        let basenames: Vec<String> = result.iter().map(|c| c.basename.clone()).collect();
+        let basenames: Vec<String> = result
+            .iter()
+            .map(|c| {
+                c.path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
         assert_eq!(basenames, vec![".alpha".to_string(), ".gamma".to_string()]);
         for c in &result {
             assert!(c.skipped_reason.is_none());
@@ -281,7 +256,10 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         let c = &result[0];
-        assert_eq!(c.basename, ".target");
+        assert_eq!(
+            c.path.file_name().map(|s| s.to_string_lossy().into_owned()),
+            Some(".target".to_string())
+        );
         assert_eq!(c.entries.len(), 2);
         assert_eq!(c.skipped_reason, Some(SkipReason::TooManyFiles(5)));
         let names: Vec<String> = c
@@ -306,7 +284,15 @@ mod tests {
         let cfg = make_config(vec![root.to_path_buf()], 1, 60, 10);
         let result = walk(&cfg);
 
-        let basenames: Vec<String> = result.iter().map(|c| c.basename.clone()).collect();
+        let basenames: Vec<String> = result
+            .iter()
+            .map(|c| {
+                c.path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
         assert_eq!(basenames, vec![".top".to_string()]);
     }
 
@@ -321,7 +307,15 @@ mod tests {
         let cfg = make_config(vec![root.to_path_buf()], 3, 60, 10);
         let result = walk(&cfg);
 
-        let basenames: Vec<String> = result.iter().map(|c| c.basename.clone()).collect();
+        let basenames: Vec<String> = result
+            .iter()
+            .map(|c| {
+                c.path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default()
+            })
+            .collect();
         assert_eq!(
             basenames,
             vec![
@@ -363,7 +357,12 @@ mod tests {
         let cfg = make_config(vec![root.to_path_buf()], 3, 60, 10);
         let result = walk(&cfg);
 
-        assert!(result.iter().any(|c| c.basename == ".target"));
+        assert!(result.iter().any(|c| {
+            c.path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                == Some(".target".to_string())
+        }));
         for c in &result {
             assert!(c.skipped_reason.is_none());
         }
