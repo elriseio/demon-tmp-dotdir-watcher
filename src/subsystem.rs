@@ -104,10 +104,18 @@ fn walk_recursive(
         }
     };
 
-    for entry in read.flatten() {
-        let p = entry.path();
-        if p.is_dir() {
-            walk_recursive(&p, depth + 1, max_depth, window, now, max_files, out);
+    for entry in read {
+        match entry {
+            Ok(e) => {
+                let p = e.path();
+                if p.is_dir() {
+                    walk_recursive(&p, depth + 1, max_depth, window, now, max_files, out);
+                }
+            }
+            Err(e) => warn!(
+                "subsystem: read_dir entry error at {}: {e}",
+                dir.display()
+            ),
         }
     }
 }
@@ -127,11 +135,21 @@ fn collect_entries(dir: &Path, max_files: usize) -> (Vec<PathBuf>, Option<SkipRe
         }
     };
 
-    let mut all: Vec<PathBuf> = read
-        .flatten()
-        .filter(|e| e.path().is_file())
-        .map(|e| e.path())
-        .collect();
+    let mut all: Vec<PathBuf> = Vec::new();
+    for entry in read {
+        match entry {
+            Ok(e) => {
+                let p = e.path();
+                if p.is_file() {
+                    all.push(p);
+                }
+            }
+            Err(e) => warn!(
+                "subsystem: collect_entries entry error at {}: {e}",
+                dir.display()
+            ),
+        }
+    }
 
     let total = all.len();
     all.sort();
@@ -324,5 +342,30 @@ mod tests {
         );
         let result = walk(&cfg);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn walk_survives_broken_symlink_in_scan_root() {
+        // DE-001 regression: walker must not panic on broken symlinks
+        // inside the scan root. chmod-000 is unreliable in CI containers
+        // (the process usually runs as root), so broken symlinks serve
+        // as a stable stand-in for "per-entry iterator weirdness": they
+        // survive read_dir (the entry itself is Ok) but cause downstream
+        // metadata operations to fail, exercising the same warn-on-err
+        // path that the flatten() → match refactor opened up.
+        let tmp = TempDir::new("broken_symlink");
+        let root = tmp.path();
+        let dotdir = root.join(".target");
+        fs::create_dir_all(&dotdir).unwrap();
+        std::os::unix::fs::symlink("/this/path/does/not/exist/broken_link", dotdir.join("link"))
+            .unwrap();
+
+        let cfg = make_config(vec![root.to_path_buf()], 3, 60, 10);
+        let result = walk(&cfg);
+
+        assert!(result.iter().any(|c| c.basename == ".target"));
+        for c in &result {
+            assert!(c.skipped_reason.is_none());
+        }
     }
 }
