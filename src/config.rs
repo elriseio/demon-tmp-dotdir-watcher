@@ -3,6 +3,21 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
+macro_rules! set_from_env {
+    ($cfg:expr, $env:expr, $field:expr, $ty:ty) => {{
+        if let Ok(v) = std::env::var($env) {
+            match v.parse::<$ty>() {
+                Ok(parsed) => $field = parsed,
+                Err(e) => tracing::warn!(
+                    "config: env {} rejected value {:?}: {e}; keeping default",
+                    $env,
+                    v
+                ),
+            }
+        }
+    }};
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Config {
     pub log: LogConfig,
@@ -95,22 +110,25 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
     if let Ok(level) = std::env::var("DEMON_LOG_LEVEL") {
         cfg.log.level = level;
     }
-    if let Ok(t) = std::env::var("DEMON_SHUTDOWN_TIMEOUT_SEC") {
-        if let Ok(parsed) = t.parse() {
-            cfg.runtime.shutdown_timeout_sec = parsed;
-        }
-    }
+    set_from_env!(
+        cfg,
+        "DEMON_SHUTDOWN_TIMEOUT_SEC",
+        cfg.runtime.shutdown_timeout_sec,
+        u64
+    );
 
-    if let Ok(v) = std::env::var("DEMON_PATHS__SCAN_MAXDEPTH") {
-        if let Ok(parsed) = v.parse() {
-            cfg.paths.scan_maxdepth = parsed;
-        }
-    }
-    if let Ok(v) = std::env::var("DEMON_PATHS__SCAN_WINDOW_MINUTES") {
-        if let Ok(parsed) = v.parse() {
-            cfg.paths.scan_window_minutes = parsed;
-        }
-    }
+    set_from_env!(
+        cfg,
+        "DEMON_PATHS__SCAN_MAXDEPTH",
+        cfg.paths.scan_maxdepth,
+        usize
+    );
+    set_from_env!(
+        cfg,
+        "DEMON_PATHS__SCAN_WINDOW_MINUTES",
+        cfg.paths.scan_window_minutes,
+        u32
+    );
     if let Ok(v) = std::env::var("DEMON_PATHS__SCAN_ROOTS") {
         cfg.paths.scan_roots = v
             .split(':')
@@ -127,21 +145,24 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
     if let Ok(v) = std::env::var("DEMON_ALLOWLIST__ALLOWLIST") {
         cfg.allowlist.allowlist = PathBuf::from(v);
     }
-    if let Ok(v) = std::env::var("DEMON_ALLOWLIST__MAX_FILES_PER_DIR") {
-        if let Ok(parsed) = v.parse() {
-            cfg.allowlist.max_files_per_dir = parsed;
-        }
-    }
-    if let Ok(v) = std::env::var("DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH") {
-        if let Ok(parsed) = v.parse() {
-            cfg.actions.quarantine_on_ioc_match = parsed;
-        }
-    }
-    if let Ok(v) = std::env::var("DEMON_ACTIONS__ALERT_ON_UNKNOWN") {
-        if let Ok(parsed) = v.parse() {
-            cfg.actions.alert_on_unknown = parsed;
-        }
-    }
+    set_from_env!(
+        cfg,
+        "DEMON_ALLOWLIST__MAX_FILES_PER_DIR",
+        cfg.allowlist.max_files_per_dir,
+        usize
+    );
+    set_from_env!(
+        cfg,
+        "DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH",
+        cfg.actions.quarantine_on_ioc_match,
+        bool
+    );
+    set_from_env!(
+        cfg,
+        "DEMON_ACTIONS__ALERT_ON_UNKNOWN",
+        cfg.actions.alert_on_unknown,
+        bool
+    );
 
     cfg
 }
@@ -300,5 +321,20 @@ actions:
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(cfg.paths.scan_maxdepth, 2);
         std::env::remove_var("DEMON_PATHS__SCAN_MAXDEPTH");
+    }
+
+    #[test]
+    fn env_override_keeps_default_on_unparseable_value() {
+        // DE-002 regression: a parse-failed env var must not
+        // silently fall through to the default; the default must
+        // be kept AND a warn! line must be emitted. The default
+        // assertion is deterministic; the warn! line is verified
+        // by inspection (tracing-subscriber test layer is not
+        // wired here, but the macro form is exercised on every
+        // call).
+        std::env::set_var("DEMON_SHUTDOWN_TIMEOUT_SEC", "not-a-number");
+        let cfg = load_config(None).expect("default config must parse");
+        assert_eq!(cfg.runtime.shutdown_timeout_sec, 30);
+        std::env::remove_var("DEMON_SHUTDOWN_TIMEOUT_SEC");
     }
 }
