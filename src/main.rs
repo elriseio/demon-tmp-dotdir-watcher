@@ -10,6 +10,7 @@ use tracing_subscriber::EnvFilter;
 use crate::config::{load_config, LogConfig};
 
 mod config;
+mod subsystem;
 
 fn init_logging(cfg: &LogConfig) -> Result<()> {
     let filter = EnvFilter::try_new(&cfg.level).context("parse log level")?;
