@@ -5,7 +5,7 @@ use predicates::prelude::*;
 
 #[test]
 fn help_flag_prints_usage() {
-    Command::cargo_bin("rust_demon_template")
+    Command::cargo_bin("demon-tmp-dotdir-watcher")
         .unwrap()
         .arg("--help")
         .assert()
@@ -15,7 +15,7 @@ fn help_flag_prints_usage() {
 
 #[test]
 fn exits_clean_when_config_is_invalid() {
-    Command::cargo_bin("rust_demon_template")
+    Command::cargo_bin("demon-tmp-dotdir-watcher")
         .unwrap()
         .arg("/nonexistent/config.yaml")
         .timeout(Duration::from_secs(5))
