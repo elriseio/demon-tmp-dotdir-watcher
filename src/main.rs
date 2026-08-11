@@ -11,6 +11,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::{load_config, LogConfig};
 
+mod allowlist;
 mod config;
 mod ioc;
 mod subsystem;
