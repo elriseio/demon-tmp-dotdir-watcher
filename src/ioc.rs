@@ -26,6 +26,16 @@ impl std::fmt::Debug for Matcher {
 }
 
 impl Matcher {
+    /// Empty matcher with no IOCs. Used by the runtime when the
+    /// IOC list file is missing (per ARCHITECTURE.md § Failure
+    /// modes: "IOC list missing: ... skip scan; exit 0"); all
+    /// candidates classify as Unknown.
+    pub fn empty() -> Self {
+        Self {
+            hashes: HashSet::new(),
+        }
+    }
+
     pub fn load(path: &Path) -> Result<Matcher> {
         let file =
             File::open(path).with_context(|| format!("open IOC list {}", path.display()))?;

@@ -1,0 +1,346 @@
+//! AR-008: runtime tick body.
+//!
+//! Wires the full pipeline that the bash reference impl performs
+//! per poll cycle:
+//!   1. Walk scan roots (`subsystem::walk`).
+//!   2. Classify candidates via `subsystem::walk_decision_pipeline`
+//!      (allowlist + IOC match).
+//!   3. Quarantine IOC matches (`subsystem::quarantine`).
+//!   4. Emit journal + NTFY events (`output::emit_*`).
+//!
+//! The runtime is owned by `main()` and ticked once per second
+//! (the systemd timer drives cadence per ARCHITECTURE.md
+//! invariant 2; the per-second ticker is for prompt shutdown
+//! responsiveness).
+
+#![allow(dead_code)]
+
+use std::path::Path;
+use std::time::Duration;
+
+use anyhow::{Context, Result};
+use tokio::sync::watch;
+use tokio::time::{interval, MissedTickBehavior};
+use tracing::{error, info, warn};
+
+use crate::allowlist::Allowlist;
+use crate::config::Config;
+use crate::ioc::{hash_file, Matcher};
+use crate::output;
+use crate::subsystem::{self, Decision, QuarantineOutcome};
+
+/// Per-tick counter. Plain-data; cheap to log and clone.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RunSummary {
+    pub candidates: usize,
+    pub allowlisted: usize,
+    pub ioc_matches: usize,
+    pub unknown: usize,
+    pub quarantined: usize,
+    pub skipped: usize,
+}
+
+#[derive(Debug)]
+pub struct Runtime {
+    cfg: Config,
+    matcher: Matcher,
+    allowlist: Allowlist,
+    shutdown_rx: watch::Receiver<bool>,
+}
+
+impl Runtime {
+    /// AR-008: load the IOC matcher and allowlist eagerly so
+    /// per-tick errors (e.g., transient FS hiccups on the IOC
+    /// list file) don't break the runtime; they are logged at
+    /// boot. Missing allowlist returns an empty Allowlist
+    /// (`allowlist::load` semantics). Missing IOC list also
+    /// degrades to an empty Matcher per ARCHITECTURE.md §
+    /// Failure modes ("IOC list missing: ... skip scan; exit 0")
+    /// so `--dry-run` against the embedded default config works
+    /// on dev boxes where `/etc/tmp-watcher.iocs` is absent.
+    pub fn new(cfg: Config, shutdown_rx: watch::Receiver<bool>) -> Result<Self> {
+        let matcher = match Matcher::load(&cfg.ioc.ioc_list) {
+            Ok(m) => m,
+            Err(e) => {
+                warn!(
+                    target: "tmp-watcher",
+                    priority = 4,
+                    ioc_list = %cfg.ioc.ioc_list.display(),
+                    error = %e,
+                    "runtime: IOC list unavailable; using empty Matcher; IOC match disabled",
+                );
+                Matcher::empty()
+            }
+        };
+        let allowlist = Allowlist::load(&cfg.allowlist.allowlist)
+            .context("load allowlist")?;
+        Ok(Self {
+            cfg,
+            matcher,
+            allowlist,
+            shutdown_rx,
+        })
+    }
+
+    /// AR-008: one full poll pipeline. Returns a `RunSummary`
+    /// counter for logging and tests.
+    ///
+    /// The 5-step ordering per the issue scope:
+    ///   1. walk scan roots
+    ///   2. classify (allowlist + IOC match)
+    ///   3. quarantine IOC matches
+    ///   4. emit journal events
+    ///   5. (NTFY push is wired but a no-op until `Config` learns
+    ///      a `ntfy_url` field; see implementation notes below.)
+    pub async fn run_once(&self) -> Result<RunSummary> {
+        let candidates = subsystem::walk(&self.cfg);
+        let decisions = subsystem::walk_decision_pipeline(
+            candidates,
+            &self.matcher,
+            &self.allowlist,
+        );
+
+        let mut summary = RunSummary {
+            candidates: decisions.len(),
+            ..Default::default()
+        };
+
+        for (c, d) in &decisions {
+            // `subsystem::walk_decision_pipeline` already
+            // computes the basename once for `allowlist.allows`;
+            // we recompute it here from `c.path` rather than
+            // carrying a parallel Vec<String>, per SC-RUST-005
+            // § "do not duplicate paths in two data shapes".
+            let basename = c
+                .path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("");
+
+            match d {
+                Decision::Skipped(reason) => {
+                    summary.skipped += 1;
+                    warn!(
+                        target: "tmp-watcher",
+                        priority = 4,
+                        basename = basename,
+                        reason = ?reason,
+                        "runtime: candidate skipped",
+                    );
+                }
+                Decision::Allowlisted => {
+                    summary.allowlisted += 1;
+                    info!(
+                        target: "tmp-watcher",
+                        basename = basename,
+                        "runtime: candidate allowlisted",
+                    );
+                }
+                Decision::IocMatch => {
+                    summary.ioc_matches += 1;
+                    let hash = matching_hash(c, &self.matcher);
+                    if self.cfg.actions.quarantine_on_ioc_match {
+                        let outcome = subsystem::quarantine(&c.path);
+                        match outcome {
+                            QuarantineOutcome::Applied => {
+                                summary.quarantined += 1;
+                                output::emit_ioc_match(basename, &c.path, &hash);
+                                if let Err(e) = push_ntfy_for_match(basename, &c.path, &hash).await {
+                                    warn!(
+                                        target: "tmp-watcher",
+                                        priority = 4,
+                                        error = %e,
+                                        "runtime: ntfy push failed",
+                                    );
+                                }
+                            }
+                            QuarantineOutcome::AlreadyQuarantined => {
+                                // Already 0o000 from a previous
+                                // poll; the IOC match still
+                                // triggers the journal event so
+                                // operators see the recurrence.
+                                output::emit_ioc_match(basename, &c.path, &hash);
+                            }
+                            QuarantineOutcome::Failed(err) => {
+                                output::emit_ioc_quarantine_failed(&c.path, &err);
+                            }
+                        }
+                    } else {
+                        output::emit_ioc_match(basename, &c.path, &hash);
+                    }
+                }
+                Decision::Unknown => {
+                    summary.unknown += 1;
+                    if self.cfg.actions.alert_on_unknown {
+                        output::emit_unknown(basename, &c.path);
+                    }
+                }
+            }
+        }
+
+        info!(
+            target: "tmp-watcher",
+            candidates = summary.candidates,
+            allowlisted = summary.allowlisted,
+            ioc_matches = summary.ioc_matches,
+            unknown = summary.unknown,
+            quarantined = summary.quarantined,
+            skipped = summary.skipped,
+            "runtime: tick summary",
+        );
+
+        Ok(summary)
+    }
+
+    /// AR-008: long-lived entry point. Ticks once per second
+    /// (interval is for shutdown responsiveness; cadence is
+    /// driven by the systemd timer per invariant 2).
+    pub async fn run(mut self) -> Result<()> {
+        let mut tick = interval(Duration::from_secs(1));
+        tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        loop {
+            tokio::select! {
+                _ = self.shutdown_rx.changed() => {
+                    // shutdown_rx is a watch::Receiver<bool>;
+                    // borrow() is sync and read after the
+                    // notification fired. The receiver does not
+                    // hold a std::sync::MutexGuard across the
+                    // .await on `changed()` — `changed()` is the
+                    // only await point and the receiver's internal
+                    // state is owned by tokio, so clippy
+                    // `await_holding_lock` stays silent.
+                    if *self.shutdown_rx.borrow() {
+                        info!("shutdown: requested by signal");
+                        return Ok(());
+                    }
+                }
+                _ = tick.tick() => {
+                    // AR-008: one full poll pipeline per tick.
+                    // Per-tick errors are logged at CRITICAL but
+                    // do NOT abort the loop (invariant 5: failures
+                    // are loud, not crash-inducing).
+                    if let Err(e) = self.run_once().await {
+                        error!(
+                            target: "tmp-watcher",
+                            priority = 2,
+                            error = %e,
+                            "runtime: tick failed",
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Re-hash each entry of the candidate and find the first one
+/// whose SHA-256 is in the matcher. The pipeline already
+/// classified the candidate as IocMatch, so this is guaranteed
+/// to find a match in practice; we still return a placeholder
+/// `""` hash on miss so `output::emit_ioc_match` always has a
+/// non-None argument (its signature requires `&str`).
+fn matching_hash(c: &crate::subsystem::Candidate, matcher: &Matcher) -> String {
+    for entry in &c.entries {
+        if let Ok(h) = hash_file(entry) {
+            if matcher.contains(&h) {
+                return h;
+            }
+        }
+    }
+    String::new()
+}
+
+/// AR-008: NTFY push for an IOC match. `url` is `None` until
+/// `Config` gains a `ntfy_url` field (a deliberate non-goal of
+/// this task per the issue's scope); `output::ntfy_push(None, …)`
+/// is a documented no-op. The runtime path is wired so adding
+/// the config field later is a one-line change.
+async fn push_ntfy_for_match(
+    basename: &str,
+    path: &Path,
+    hash: &str,
+) -> Result<()> {
+    let title = format!("tmp-watcher IOC match: {basename}");
+    let body = format!("path={} sha256={}", path.display(), hash);
+    output::ntfy_push(None, &title, &body).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::{
+        ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig,
+        RuntimeConfig,
+    };
+    use crate::test_util::{TempDir, TempFile};
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+    use std::path::PathBuf;
+    use tokio::sync::watch;
+
+    #[tokio::test]
+    async fn run_once_full_pipeline() {
+        // AR-008 acceptance: a tempdir containing a known IOC
+        // file under a non-allowlisted dotdir produces
+        // `RunSummary { ioc_matches: 1, quarantined: 1, unknown: 0 }`
+        // and the dotdir is now chmod 0o000.
+        let tmp = TempDir::new("runtime_pipeline");
+        let root = tmp.path();
+
+        let dot = root.join(".r.rpk-test");
+        fs::create_dir_all(&dot).expect("create dotdir");
+        let payload: &[u8] = b"azazel-trunk-content-for-ar-008-runtime-pipeline\n";
+        fs::write(dot.join("trunk.bin"), payload).expect("write payload");
+
+        let ioc_hash = hash_file(&dot.join("trunk.bin")).expect("hash payload");
+
+        let ioc_list = TempFile::with_content("runtime_ioc_list", ioc_hash.as_bytes());
+
+        let cfg = Config {
+            log: LogConfig {
+                level: "info".to_string(),
+            },
+            runtime: RuntimeConfig {
+                shutdown_timeout_sec: 5,
+            },
+            paths: PathsConfig {
+                scan_roots: vec![root.to_path_buf()],
+                scan_maxdepth: 3,
+                scan_window_minutes: 60,
+            },
+            ioc: IocConfig {
+                ioc_list: ioc_list.path().to_path_buf(),
+                ioc_archive_ref: None,
+            },
+            allowlist: AllowlistConfig {
+                allowlist: PathBuf::from("/dev/null"),
+                max_files_per_dir: 10,
+            },
+            actions: ActionsConfig {
+                quarantine_on_ioc_match: true,
+                alert_on_unknown: false,
+            },
+        };
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let summary = runtime.run_once().await.expect("run_once");
+
+        assert_eq!(summary.candidates, 1, "expected 1 candidate");
+        assert_eq!(summary.ioc_matches, 1, "expected 1 IOC match");
+        assert_eq!(summary.quarantined, 1, "expected 1 quarantine");
+        assert_eq!(summary.unknown, 0, "expected 0 unknown");
+
+        // Read the mode BEFORE restoring for the TempDir Drop.
+        let mode_after_quarantine =
+            fs::metadata(&dot).unwrap().permissions().mode() & 0o777;
+        // Best-effort restore so the TempDir's recursive removal
+        // can walk the directory.
+        let _ = fs::set_permissions(&dot, fs::Permissions::from_mode(0o755));
+        assert_eq!(
+            mode_after_quarantine, 0o000,
+            "expected dotdir to be chmod 0o000 after quarantine"
+        );
+    }
+}
