@@ -123,7 +123,38 @@ async fn main() -> Result<()> {
     init_logging(&cfg.log)?;
 
     if cli.dry_run {
-        info!("dry-run: skipping boot loop (subsystem wiring lands in AR-008)");
+        // AR-007: extended `--dry-run` to actually walk scan_roots
+        // and print per-candidate metadata to stderr so operators
+        // can verify config + scan coverage before booting the
+        // daemon. The full Decision pipeline (Allowlist, Matcher,
+        // output::emit_*) is wired into the runtime tick by
+        // AR-008; here we emit raw walk output via eprintln! so
+        // the operator sees what `subsystem::walk` returns without
+        // coupling the CLI handler to AR-008's runtime wiring.
+        let cfg = load_config(cli.config_path.as_deref())
+            .context("load config for --dry-run")?;
+        eprintln!("dry-run: loaded config");
+        let candidates = subsystem::walk(&cfg);
+        eprintln!(
+            "dry-run: {} candidates produced",
+            candidates.len()
+        );
+        for c in &candidates {
+            let basename = c
+                .path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let skipped = c
+                .skipped_reason
+                .as_ref()
+                .map(|r| format!("{r:?}"))
+                .unwrap_or_else(|| "-".to_string());
+            eprintln!(
+                "dry-run: candidate basename={basename} entries={} skipped={skipped}",
+                c.entries.len()
+            );
+        }
         return Ok(());
     }
 
