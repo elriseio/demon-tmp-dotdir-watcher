@@ -233,6 +233,28 @@ expand this file as new false-positive patterns are observed;
 the daemon picks up changes on the next poll cycle (within ten
 minutes), no restart needed.
 
+## Memory footprint
+
+| Metric | Value | Notes |
+|---|---|---|
+| Binary (main) | 6.7 MB | `demon-tmp-dotdir-watcher`, stripped release |
+| Binary (sidecar) | 2.3 MB | `demon-tmp-watcher-cross-host`, one-shot |
+| RSS idle | 7.0 MB | boot complete, between ticks |
+| RSS peak (500 candidates) | 7.3 MB | +264 KB ≈ 540 B per candidate |
+| Tick duration (500 dotdirs) | ~5 ms | measured on a typical tmpfs/ext4 |
+| Virtual size | ~764 MB | unmapped mmap; not a RAM concern |
+
+The daemon holds no state between ticks: the `IOC` HashSet, allowlist
+GlobMatcher set, and per-tick `Vec<Candidate>` are released at the
+end of every poll cycle. Steady-state RSS stays at 7.0 MB across
+thousands of cycles (no leak). Memory growth is linear in candidate
+count and bounded by `scan_maxdepth` × `max_files_per_dir` per
+scan_root.
+
+Run the daemon under `Type=oneshot` systemd activation so the process
+is reclaimed between activations — the daemon does not need to hold
+memory when no timer is firing.
+
 ## Deployment (systemd)
 
 The daemon is timer-driven. The unit and timer are not shipped
