@@ -49,7 +49,7 @@ Architectural goal (current wave):
 | Crate | `demon-tmp-dotdir-watcher` (`Cargo.toml`) |
 | Edition / MSRV | Rust 2021 / 1.74 |
 | Language target | Rust (port from bash spec in `ORIGIN.md`) |
-| Host target | `tmp-vps` (single host) |
+| Host target | single Linux host running systemd |
 | Cadence | systemd timer (`OnUnitActiveSec=10min`) |
 | State retention | one poll window only (volatile `/run/tmp-watcher/`) |
 | Network | loopback only (NTFY push to operator-configured URL) |

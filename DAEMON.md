@@ -3,7 +3,6 @@ demon: tmp-dotdir-watcher
 kind: proposed
 status: scaffold
 language_target: rust
-host_target: tmp-vps (46.36.219.176)
 priority: high
 ---
 
@@ -74,7 +73,7 @@ The Cargo.toml / src/ main.rs available here are a scaffold only.
 ## Open questions (carry into the first implementation commit)
 
 - [ ] Confirm the host list in ORIGIN.md "Target host" is current
-      (single host: tmp-vps).
+      (single Linux host running systemd).
 - [ ] Confirm the IOC list is current and matches the canonical
       forensic archive reference.
 - [ ] Confirm the allowlist is current (X11 + systemd-private

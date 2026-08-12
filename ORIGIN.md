@@ -1,7 +1,6 @@
 # tmp-dotdir-watcher (proposed daemon)
 
 **Priority:** 🔴 high (would have detected an Azazel-family compromise 71 hours earlier than operator-flagged 502 detection)
-**Target host:** tmp-vps (46.36.219.176)
 **Period:** every 10 minutes (timer)
 **Would prevent:** Hidden Azazel-style malware footprints under `/tmp/.dotdir/` (`.r.rpk/`, `.xdiag/`, `.perf.c/`, `.apid/`, `.atmp/`)
 
@@ -15,7 +14,7 @@ An Azazel-family compromise on an affected host lived for 72 hours undetected de
 - `/tmp/.apid` — runtime marker (4 bytes)
 - `/home/www-data/.atmp/tmp/.applocal.xdiag/` — the actual payload (12 KB)
 
-`tmp-prune` cron doesn't run on tmp-vps (alpine image — wait, Debian 12 here; the host's `systemd-tmpfiles-clean.timer` runs but doesn't delete dot-directories). `du /tmp` wasn't monitored. `/tmp/.r.rpk/` is 88 KB total — well within the noise of a 600 MB `/tmp/`.
+`tmp-prune` cron does not run on the target host (Debian 12 image); the host's `systemd-tmpfiles-clean.timer` runs but does not delete dot-directories. `du /tmp` wasn't monitored. `/tmp/.r.rpk/` is 88 KB total — well within the noise of a 600 MB `/tmp/`.
 
 The malware analysis §8 lesson-learned explicitly states: *"A simple `find /tmp -maxdepth 1 -name '.*' -type d -newer ...` cron would have caught `.r.rpk/`, `.xdiag/`, `.perf.c/` on day 1"*.
 

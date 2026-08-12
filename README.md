@@ -4,7 +4,7 @@
 Demon:           tmp-dotdir-watcher
 Crate:           demon-tmp-dotdir-watcher (v0.1.0)
 Edition / MSRV:  Rust 2021 / 1.74
-Host target:     tmp-vps (46.36.219.176)
+Host target:     single Linux host running systemd
 Cadence:         every 10 minutes (systemd timer)
 Severity:        high — would have detected an Azazel-family
                  compromise on an affected host 71 hours earlier than
