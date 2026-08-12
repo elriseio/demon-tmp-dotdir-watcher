@@ -27,11 +27,11 @@ or transformation, side effect.
 | Cron / cadence | systemd timer (`OnUnitActiveSec=10min`) | external |
 | Persistent state | none (state is volatile only) | external |
 | Volatile state | /run/tmp-watcher/ (last-seen paths, cooldowns) | n/a |
-| Configuration | /etc/tmp-watcher.conf (TOML) | external |
+| Configuration | /etc/tmp-watcher.yaml (YAML; embedded default at `config/default.yaml`) | external |
 | Source-of-truth IOCs | /etc/tmp-watcher.iocs (one SHA-256 per line) | forensic archive |
 | Allowlist | /etc/tmp-watcher.allowlist (one glob per line) | external |
 | Logging | journald (`-t tmp-watcher`) + /var/log/tmp-watcher.log | external |
-| Notifications | NTFY push per config | external |
+| Notifications | NTFY push — **planned, not wired** (runtime path through `output::ntfy_push` exists but always receives `None`; see `docs/architecture/STATUS.md`) | external |
 | Secrets | env vars only; no reads from disk | operator secret manager |
 
 ## Components (target Rust port)
@@ -39,7 +39,7 @@ or transformation, side effect.
 | Component | Responsibility | Source of truth |
 |---|---|---|
 | `src/main.rs` | Boot, signal handling, top-level wiring | this folder |
-| `src/config.rs` | Load + validate TOML config; env overlay | ORIGIN.md "Configuration" |
+| `src/config.rs` | Load + validate YAML config; env overlay | ORIGIN.md "Configuration" |
 | `src/runtime.rs` | Main loop; shutdown coordination | ORIGIN.md "What it does" |
 | `src/subsystem.rs` | Walk + hash + match + quarantine | ORIGIN.md "What it does" |
 | `src/ioc.rs` | IOC list loader + SHA-256 matcher | ORIGIN.md "IOC list" |
@@ -53,10 +53,10 @@ or transformation, side effect.
 | Subsystem count | 1 (one observable side effect) | multi-purpose |
 | Network | loopback only | accept inbound connections |
 | State retention | one poll window only | keep path history across reboots |
-| Output | journal + NTFY + /var/log/tmp-watcher.log | `println!` past boot |
+| Output | journal + /var/log/tmp-watcher.log (NTFY path wired but always noop; see `docs/architecture/STATUS.md`) | `println!` past boot |
 | Secrets | env vars only | read from disk |
 | Side effect on IOC match | `chmod 000 <path>` (idempotent) | `rm -rf` (destructive) |
-| Side effect on unknown dotdir | log WARNING + optional NTFY | auto-quarantine |
+| Side effect on unknown dotdir | log WARNING (NTFY push planned, see `docs/architecture/STATUS.md`) | auto-quarantine |
 
 ## Invariants
 
@@ -75,8 +75,12 @@ or transformation, side effect.
 4. **One subsystem per daemon.** Detection only. Auto-recovery
    beyond the `chmod 000` quarantine is out of scope.
 5. **Failures are loud.** Any non-zero exit must have a
-   corresponding NTFY notification (subject to per-config
-   suppression).
+   corresponding journal `error!` event with `priority = 2`
+   (CRITICAL). NTFY notification is **not** part of the
+   failure-loudness contract today because the NTFY push is
+   unwired (see `docs/architecture/STATUS.md`); when the
+   `Config.ntfy_url` field lands, the invariant re-tightens to
+   "non-zero exit + NTFY push, subject to per-config suppression".
 6. **Walking scope is bounded.** `scan_maxdepth` ≤ 3,
    `max_files_per_dir` ≤ 10 caps the find/sha256sum cost per
    candidate; larger candidates log a WARNING and are skipped.
@@ -89,13 +93,13 @@ or transformation, side effect.
 | Failure | Detection | Response |
 |---|---|---|
 | Boots but config invalid | systemd `PreStart` or first `info!` | exit non-zero; systemd `Restart=on-failure` retries |
-| IOC list missing | subsystem startup probe | log to journal + NTFY; skip scan; exit 0 |
+| IOC list missing | subsystem startup probe | log to journal (NTFY push planned, see `docs/architecture/STATUS.md`); skip scan; exit 0 |
 | Allowlist missing | subsystem startup probe | log to journal; use empty in-memory allowlist; proceed |
 | `/run/tmp-watcher/` not writable | mkdir probe | exit non-zero; systemd retries |
 | `/var/log/tmp-watcher.log` not writable | open() probe | log to journal only; continue |
 | sha256sum on a 10+ file dotdir | file count > limit | abort that candidate; WARNING; continue |
 | find crossing a slow filesystem | timeout in `find` | log WARNING; skip that subtree |
-| NTFY endpoint unreachable | curl error | log error; do not retry inside daemon (next poll) |
+| NTFY endpoint unreachable | (not yet wired; runtime call site `output::ntfy_push(None, …)` is a no-op) | log error; do not retry inside daemon (next poll) — applies once `Config.ntfy_url` lands |
 
 ## Migration to Rust
 
@@ -106,7 +110,10 @@ Rust port lands:
 2. Preserve journal field names: `journal_tag = "tmp-watcher"`,
    `PRIORITY=2` for CRITICAL, `PRIORITY=4` for WARNING.
 3. Preserve `/run/tmp-watcher/`, `/var/log/tmp-watcher.log`,
-   `/etc/tmp-watcher.{conf,allowlist,iocs}` paths.
+   `/etc/tmp-watcher.{allowlist,iocs}` paths. Config lives at
+   `/etc/tmp-watcher.yaml` (or the embedded default at
+   `config/default.yaml`); no other config file path is
+   read by the Rust port.
 4. Preserve the `chmod 000` quarantine side effect (no `rm -rf`).
 5. Run a shadow week: bash script remains active, Rust binary
    runs in dry-run / log-only mode for one cycle.

@@ -35,9 +35,14 @@ include: symptom, triage steps, escalation path.)
 
 ### 1. CRITICAL: IOC match (host may be compromised)
 
-**Symptom:** `PRIORITY=2` journal line + NTFY alert with
+**Symptom:** `PRIORITY=2` journal line with
 "daemon: tmp-watcher | event: ioc_match | path: /tmp/.dotdir/...".
-The daemon has already `chmod 000` the matched directory.
+The daemon has already `chmod 000` the matched directory. The NTFY
+push for operator phone alert is **planned, not wired** today
+(see `docs/architecture/STATUS.md`); if the journal is silent and
+the operator phone is silent, the IOC match may have been missed
+by the systemd-journal shipping path. Verify with
+`journalctl -t tmp-watcher PRIORITY=2 -S -1h`.
 
 **Triage:**
 
@@ -110,12 +115,17 @@ escalate immediately.
    ```bash
    demon-tmp-dotdir-watcher --dry-run
    ```
-4. If manual run fails with a config error, fix
-   `/etc/tmp-watcher.conf` and retry.
+4. If manual run fails with a config error, fix the YAML
+   config (default at `config/default.yaml`; operator override
+   at `/etc/tmp-watcher.yaml` if present) and retry. No
+   other config file path is read by the Rust port.
 
 **Escalation:** if the daemon refuses to start after a config
-fix, capture the full journal output and the contents of
-`/etc/tmp-watcher.*` and escalate.
+fix, capture the full journal output, the resolved config (run
+`demon-tmp-dotdir-watcher --print-config` if available, else
+copy `/etc/tmp-watcher.yaml` plus the embedded default), and
+the contents of `/etc/tmp-watcher.{allowlist,iocs}` and
+escalate.
 
 ### 4. Quarantine rollback (false positive)
 
@@ -151,7 +161,7 @@ chmod-000 path does not error (it must be a no-op).
 The daemon does not support SIGHUP. To pick up a config change:
 
 ```bash
-$EDITOR /etc/tmp-watcher.conf
+$EDITOR /etc/tmp-watcher.yaml      # or the embedded config/default.yaml
 demon-tmp-dotdir-watcher --validate-config
 systemctl start tmp-watcher.service
 ```

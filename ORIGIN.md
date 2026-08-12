@@ -41,30 +41,44 @@ Every 10 min:
 
 ## Configuration
 
-```toml
-# /etc/tmp-watcher.conf
-[paths]
-scan_roots = ["/tmp", "/home", "/var/tmp"]
-scan_maxdepth = 3
-scan_window_minutes = 1440        # last 24h
+The runtime config is a **YAML** file loaded by `src/config.rs`
+via `serde_yaml::from_str`. The embedded default lives at
+`config/default.yaml`; an operator override file (path passed to
+`load_config`) replaces the embedded default field-for-field.
 
-[ioc]
-ioc_list = "/etc/tmp-watcher.iocs"
-ioc_archive_ref = "/opt/forensics/2026-08-09-elrise-compromise.tar.gz"
+```yaml
+# /etc/tmp-watcher.yaml  (illustrative; the daemon's --config flag points here)
+log:
+  level: info
 
-[allowlist]
-allowlist = "/etc/tmp-watcher.allowlist"
-max_files_per_dir = 10
+runtime:
+  shutdown_timeout_sec: 30
 
-[actions]
-quarantine_on_ioc_match = true    # chmod 000 the matched directory
-alert_on_unknown = true           # WARNING for non-allowlist dotdirs
+paths:
+  scan_roots: ["/tmp", "/home", "/var/tmp"]
+  scan_maxdepth: 3                  # last 24h window
+  scan_window_minutes: 1440
 
-[output]
-journal_tag = "tmp-watcher"
-ntfy_url = "${NTFY_URL}"          # https://ntfy.sh/<topic> or empty
-log_file = "/var/log/tmp-watcher.log"
+ioc:
+  ioc_list: "/etc/tmp-watcher.iocs"
+  ioc_archive_ref: "/opt/forensics/2026-08-09-elrise-compromise.tar.gz"
+
+allowlist:
+  allowlist: "/etc/tmp-watcher.allowlist"
+  max_files_per_dir: 10
+
+actions:
+  quarantine_on_ioc_match: true     # chmod 000 the matched directory
+  alert_on_unknown: true            # WARNING for non-allowlist dotdirs
 ```
+
+The runtime reads **no `[output]` section today**: NTFY push is
+wired through `output::ntfy_push` but always receives `None` (see
+ARCHITECTURE.md § Boundaries and `docs/architecture/STATUS.md`).
+Adding `ntfy_url: Option<String>` to the `Config` struct is a
+deliberate follow-up tracked under the same STATUS entry; until
+that lands, the `[output]` block in earlier drafts of this doc is
+**not** consumed by the daemon.
 
 ### Default `/etc/tmp-watcher.allowlist` contents
 
@@ -91,7 +105,10 @@ db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
 - `journalctl -t tmp-watcher` — structured events
 - `journalctl -t tmp-watcher PRIORITY=4` — WARNING-level (unknown dotdir)
 - `journalctl -t tmp-watcher PRIORITY=2` — CRITICAL-level (IOC match + quarantine)
-- NTFY push (if configured) — operator phone alert on CRITICAL
+- NTFY push — **planned, not wired** (see `docs/architecture/STATUS.md`).
+  The runtime path through `output::ntfy_push` exists but always
+  receives `None`; operator phone alerts on CRITICAL are not yet
+  fired.
 - `/var/log/tmp-watcher.log` — full event log with timestamps
 - `/run/tmp-watcher/` — state directory (cooldowns, last-seen paths, last-known-good manifest)
 
@@ -107,11 +124,17 @@ The daemon does NOT auto-add new directories to the allowlist. Unknown dotdirs a
 ## Implementation
 
 - Single bash script (~80 lines) at `/usr/local/bin/tmp-watcher`
-- 2 config files (`/etc/tmp-watcher.conf`, `/etc/tmp-watcher.allowlist`, `/etc/tmp-watcher.iocs`)
+- 3 config files (`/etc/tmp-watcher.yaml` or embedded default,
+  `/etc/tmp-watcher.allowlist`, `/etc/tmp-watcher.iocs`)
 - systemd service + timer (oneshot, 10-minute polling)
 - `/run/tmp-watcher/` runtime state directory
 - `/var/log/tmp-watcher.log` log file
 - No Python dependency (uses `find`, `sha256sum`, `curl`, `systemd-cat`)
+
+The Rust port is the live binary (`demon-tmp-dotdir-watcher`,
+`src/main.rs`) and consumes the same YAML config schema via
+`src/config.rs::load_config`. The bash script remains in tree as
+fallback for one release.
 
 ## Effort estimate
 
