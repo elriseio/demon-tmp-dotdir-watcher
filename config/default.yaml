@@ -13,7 +13,6 @@ paths:
 
 ioc:
   ioc_list: "/etc/tmp-watcher.iocs"
-  ioc_archive_ref: "/opt/forensics/2026-08-09-elrise-compromise.tar.gz"
 
 allowlist:
   allowlist: "/etc/tmp-watcher.allowlist"

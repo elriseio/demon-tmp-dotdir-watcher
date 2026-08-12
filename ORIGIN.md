@@ -61,7 +61,7 @@ paths:
 
 ioc:
   ioc_list: "/etc/tmp-watcher.iocs"
-  ioc_archive_ref: "/opt/forensics/2026-08-09-elrise-compromise.tar.gz"
+  # ioc_archive_ref: "<path>"   # omit unless forensic auto-refresh is enabled; set per-host in /etc/tmp-watcher.yaml
 
 allowlist:
   allowlist: "/etc/tmp-watcher.allowlist"

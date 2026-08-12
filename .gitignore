@@ -7,3 +7,8 @@
 *.log
 /log/
 /state/
+memory.json
+Makefile.agent
+Makefile
+.symposium/
+Issues/
