@@ -1,8 +1,8 @@
 #![cfg(test)]
 
-// DE-003 fixture extraction: shared TempDir / TempFile RAII types
-// for tests in ioc.rs and subsystem.rs. Both modules previously
-// copy-pasted the same ~30-line fixture; this file is the single
+// Shared TempDir / TempFile RAII types for tests in ioc.rs and
+// subsystem.rs. Both modules previously copy-pasted the same
+// ~30-line fixture; this file is the single
 // source of truth and is gated to `#[cfg(test)]` so it never ships
 // in the runtime binary.
 

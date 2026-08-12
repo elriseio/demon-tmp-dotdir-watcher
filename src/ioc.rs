@@ -9,11 +9,11 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
 pub struct Matcher {
-    // IOC storage choice (DE-004 finding #12): HashSet<String> keeps
-    // the wire form (lowercase hex) for trivial Debug output and
-    // future "show me what matched" diagnostics. HashSet<[u8;32]>
-    // would drop the heap allocation per IOC, but the IOC list is
-    // bounded and lookups dominate the runtime cost; keep strings.
+    // HashSet<String> keeps the wire form (lowercase hex) for
+    // trivial Debug output and future "show me what matched"
+    // diagnostics. HashSet<[u8;32]> would drop the heap allocation
+    // per IOC, but the IOC list is bounded and lookups dominate the
+    // runtime cost; keep strings.
     hashes: HashSet<String>,
 }
 

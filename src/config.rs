@@ -325,13 +325,12 @@ actions:
 
     #[test]
     fn env_override_keeps_default_on_unparseable_value() {
-        // DE-002 regression: a parse-failed env var must not
-        // silently fall through to the default; the default must
-        // be kept AND a warn! line must be emitted. The default
-        // assertion is deterministic; the warn! line is verified
-        // by inspection (tracing-subscriber test layer is not
-        // wired here, but the macro form is exercised on every
-        // call).
+        // A parse-failed env var must not silently fall through to
+        // the default; the default must be kept AND a warn! line
+        // must be emitted. The default assertion is deterministic;
+        // the warn! line is verified by inspection (tracing-subscriber
+        // test layer is not wired here, but the macro form is
+        // exercised on every call).
         std::env::set_var("DEMON_SHUTDOWN_TIMEOUT_SEC", "not-a-number");
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(cfg.runtime.shutdown_timeout_sec, 30);

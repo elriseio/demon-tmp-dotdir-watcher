@@ -467,11 +467,11 @@ mod tests {
 
     #[test]
     fn walk_survives_broken_symlink_in_scan_root() {
-        // DE-001 regression: walker must not panic on broken symlinks
-        // inside the scan root. chmod-000 is unreliable in CI containers
-        // (the process usually runs as root), so broken symlinks serve
-        // as a stable stand-in for "per-entry iterator weirdness": they
-        // survive read_dir (the entry itself is Ok) but cause downstream
+        // Walker must not panic on broken symlinks inside the scan
+        // root. chmod-000 is unreliable in CI containers (the process
+        // usually runs as root), so broken symlinks serve as a stable
+        // stand-in for "per-entry iterator weirdness": they survive
+        // read_dir (the entry itself is Ok) but cause downstream
         // metadata operations to fail, exercising the same warn-on-err
         // path that the flatten() → match refactor opened up.
         let tmp = TempDir::new("broken_symlink");
