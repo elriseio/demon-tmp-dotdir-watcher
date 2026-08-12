@@ -193,12 +193,20 @@ When the daemon does a clean shutdown or recovers from a long
 outage, it should append a one-liner to:
 
 ```
-/home/alex/Er/Computer/reports/<date>-tmp-watcher.md
+${REPORT_DIR}/<date>-tmp-watcher.md
 ```
 
 For IOC matches, the daemon writes a separate incident file
-under `/home/alex/Er/Computer/reports/<date>-tmp-watcher-ioc-<hash>.md`
+under `${REPORT_DIR}/<date>-tmp-watcher-ioc-<hash>.md`
 with the matched path, hash, and quarantine action.
+
+`${REPORT_DIR}` is the operator-configured report directory; see
+`config/default.yaml` § `report_dir` for the canonical default and
+override it per host via `/etc/tmp-watcher.yaml` or the
+`DEMON_TMP_DOTDIR_WATCHER_REPORT_DIR` environment variable. The
+daemon itself does not write these files automatically; the
+audit / incident artifacts are produced by the operator following
+this runbook.
 
 ## Cross-references
 

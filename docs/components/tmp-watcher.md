@@ -55,8 +55,8 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | Boot / heartbeat / shutdown | journald (`-t tmp-watcher`) + `/var/log/tmp-watcher.log` | structured JSON via `tracing-subscriber` json | every poll cycle |
 | Unknown dotdir | journald (`PRIORITY=4`) + optional NTFY | structured event | per non-allowlisted dotdir |
 | IOC match + quarantine | journald (`PRIORITY=2`) + NTFY | structured event + chmod side effect | per SHA-256 match |
-| Audit note | `/home/alex/Er/Computer/reports/<date>-tmp-watcher.md` | markdown one-liner | clean shutdown / long-outage recovery |
-| Incident file | `/home/alex/Er/Computer/reports/<date>-tmp-watcher-ioc-<hash>.md` | markdown incident | per IOC match |
+| Audit note | `${REPORT_DIR}/<date>-tmp-watcher.md` | markdown one-liner | clean shutdown / long-outage recovery |
+| Incident file | `${REPORT_DIR}/<date>-tmp-watcher-ioc-<hash>.md` | markdown incident | per IOC match |
 
 ## Module map (target Rust split)
 
@@ -142,8 +142,8 @@ port; if they drift, the contract is right and the impl is wrong.
 | CRITICAL alerts (24 h) | `journalctl -t tmp-watcher PRIORITY=2 -S -24h` |
 | WARNING (24 h) | `journalctl -t tmp-watcher PRIORITY=4 -S -24h` |
 | File log tail | `tail -100 /var/log/tmp-watcher.log` |
-| Audit one-liners | `ls -1 /home/alex/Er/Computer/reports/*tmp-watcher*.md` |
-| Incident files | `ls -1 /home/alex/Er/Computer/reports/*tmp-watcher-ioc-*.md` |
+| Audit one-liners | `ls -1 "${REPORT_DIR}"/*tmp-watcher*.md` |
+| Incident files | `ls -1 "${REPORT_DIR}"/*tmp-watcher-ioc-*.md` |
 
 ## Cross-references
 

@@ -22,3 +22,12 @@ allowlist:
 actions:
   quarantine_on_ioc_match: true
   alert_on_unknown: true
+
+#### Operator-side report directory convention. The daemon itself does
+#### not read or write this path; audit notes and incident files are
+#### produced by the operator following RUNBOOK.md § "Audit notes".
+#### Override per host via /etc/tmp-watcher.yaml or
+#### DEMON_TMP_DOTDIR_WATCHER_REPORT_DIR. Docs reference this convention
+#### via ${REPORT_DIR} so the operator's home directory is never named.
+#### Canonical default: /var/lib/tmp-watcher/reports/
+#### report_dir: /var/lib/tmp-watcher/reports/
