@@ -25,7 +25,7 @@ use tracing::{error, info, warn};
 
 use crate::allowlist::Allowlist;
 use crate::config::Config;
-use crate::ioc::{hash_file, Matcher};
+use crate::ioc::Matcher;
 use crate::output;
 use crate::subsystem::{self, Decision, QuarantineOutcome};
 
@@ -255,6 +255,7 @@ mod tests {
         ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig,
         RuntimeConfig,
     };
+    use crate::ioc::hash_file;
     use crate::test_util::{TempDir, TempFile};
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
