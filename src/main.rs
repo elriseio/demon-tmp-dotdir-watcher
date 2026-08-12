@@ -151,13 +151,21 @@ async fn main() -> Result<()> {
         // matching before booting the daemon. Exits after one
         // tick per the AR-008 acceptance clause "the loop runs
         // once because the --dry-run flag exits after run_once".
-        let cfg = load_config(cli.config_path.as_deref())
-            .context("load config for --dry-run")?;
+        //
+        // SAFETY: `--dry-run` MUST NOT mutate the host. Override
+        // `actions.quarantine_on_ioc_match` to false for this
+        // single activation so the daemon is safe-by-default
+        // regardless of the operator's config — see README
+        // § "Run" table entry for `--dry-run` which documents
+        // this contract.
+        let mut cfg =
+            load_config(cli.config_path.as_deref()).context("load config for --dry-run")?;
+        cfg.actions.quarantine_on_ioc_match = false;
         init_logging_stderr(&cfg.log)?;
-        info!(target: "tmp-watcher", "dry-run: starting one poll tick");
+        info!(target: "tmp-watcher", "dry-run: starting one poll tick (quarantine force-off)");
         let (_tx, shutdown_rx) = watch::channel(false);
-        let mut runtime = runtime::Runtime::new(cfg, shutdown_rx)
-            .context("build runtime for --dry-run")?;
+        let mut runtime =
+            runtime::Runtime::new(cfg, shutdown_rx).context("build runtime for --dry-run")?;
         let summary = runtime
             .run_once()
             .await

@@ -96,10 +96,7 @@ impl<S: Sink> Aggregator<S> {
     }
 
     pub async fn poll_once(&mut self) -> Result<AggregatorSummary> {
-        let observations = self
-            .sink
-            .fetch_observations(SystemTime::UNIX_EPOCH)
-            .await?;
+        let observations = self.sink.fetch_observations(SystemTime::UNIX_EPOCH).await?;
         let observed = observations.len();
         let mut summary = AggregatorSummary {
             observed,
@@ -218,7 +215,10 @@ fn parse_proposal_line(line: &str) -> Option<ParsedProposal> {
     let basename = parts.next()?;
     let path = parts.next()?;
     let suffix = parts.next()?;
-    let count = suffix.strip_prefix("cross_host_count=")?.parse::<u64>().ok()?;
+    let count = suffix
+        .strip_prefix("cross_host_count=")?
+        .parse::<u64>()
+        .ok()?;
     let ts = parse_iso8601_to_epoch(ts_str)?;
     let sha_real = if sha == "-" {
         None
@@ -254,7 +254,11 @@ fn ymd_to_epoch_days(year: i64, month: u32, day: u32) -> Option<i64> {
     let y = if month <= 2 { year - 1 } else { year };
     let era = if y >= 0 { y / 400 } else { (y - 399) / 400 };
     let yoe = y - era * 400;
-    let m_i64 = if month > 2 { month as i64 - 3 } else { month as i64 + 9 };
+    let m_i64 = if month > 2 {
+        month as i64 - 3
+    } else {
+        month as i64 + 9
+    };
     let doy = (153 * m_i64 + 2) / 5 + day as i64 - 1;
     let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
     Some(era * 146097 + doe - 719_468)
@@ -276,7 +280,11 @@ fn format_iso8601_utc(unix_secs: u64) -> String {
 
 fn epoch_days_to_ymd(days: i64) -> (i32, u32, u32) {
     let z = days + 719_468;
-    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
+    let era = if z >= 0 {
+        z / 146_097
+    } else {
+        (z - 146_096) / 146_097
+    };
     let doe = (z - era * 146_097) as u64;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe as i64 + era * 400;
@@ -471,11 +479,7 @@ mod tests {
         // The restored state has 2 placeholder host_ids
         // (__restored_0, __restored_1). When a new host
         // observation arrives, the placeholder set grows to 3.
-        let sink2 = MockSink::with_observations(vec![obs(
-            "hostC",
-            ".r.rpk",
-            Some("abc"),
-        )]);
+        let sink2 = MockSink::with_observations(vec![obs("hostC", ".r.rpk", Some("abc"))]);
         let mut agg2 = Aggregator::new(sink2, proposal.clone());
         let summary2 = agg2.poll_once().await.expect("poll_once");
         assert_eq!(summary2.observed, 1);

@@ -136,10 +136,7 @@ fn classify(c: &Candidate, matcher: &Matcher, allowlist: &Allowlist) -> Decision
                     return Decision::IocMatch { sha256: h };
                 }
             }
-            Err(e) => warn!(
-                "subsystem: hash_file failed for {}: {e}",
-                entry.display()
-            ),
+            Err(e) => warn!("subsystem: hash_file failed for {}: {e}", entry.display()),
         }
     }
 
@@ -185,10 +182,7 @@ fn walk_recursive(
     if let Some(result) = mtime_result {
         match result {
             Ok(t) => {
-                let within = now
-                    .duration_since(t)
-                    .map(|d| d <= *window)
-                    .unwrap_or(false);
+                let within = now.duration_since(t).map(|d| d <= *window).unwrap_or(false);
                 if within {
                     let (entries, skipped) = collect_entries(dir, max_files);
                     out.push(Candidate {
@@ -234,10 +228,7 @@ fn walk_recursive(
                     walk_recursive(&p, depth + 1, max_depth, window, now, max_files, out);
                 }
             }
-            Err(e) => warn!(
-                "subsystem: read_dir entry error at {}: {e}",
-                dir.display()
-            ),
+            Err(e) => warn!("subsystem: read_dir entry error at {}: {e}", dir.display()),
         }
     }
 }
@@ -291,8 +282,7 @@ mod tests {
     use super::*;
     use crate::allowlist::Allowlist;
     use crate::config::{
-        ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig,
-        RuntimeConfig,
+        ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig, RuntimeConfig,
     };
     use crate::ioc::{hash_file, Matcher};
     use crate::test_util::{TempDir, TempFile};
@@ -300,8 +290,8 @@ mod tests {
     use std::path::PathBuf;
 
     fn set_mtime(path: &Path, t: SystemTime) {
-        let f = File::open(path)
-            .unwrap_or_else(|e| panic!("open {} for mtime: {e}", path.display()));
+        let f =
+            File::open(path).unwrap_or_else(|e| panic!("open {} for mtime: {e}", path.display()));
         f.set_modified(t)
             .unwrap_or_else(|e| panic!("set_modified {}: {e}", path.display()));
     }
@@ -446,11 +436,7 @@ mod tests {
             .collect();
         assert_eq!(
             basenames,
-            vec![
-                ".alpha".to_string(),
-                ".mu".to_string(),
-                ".zeta".to_string(),
-            ]
+            vec![".alpha".to_string(), ".mu".to_string(), ".zeta".to_string(),]
         );
     }
 
@@ -486,9 +472,7 @@ mod tests {
         let result = walk(&cfg);
 
         assert!(result.iter().any(|c| {
-            c.path
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
+            c.path.file_name().map(|s| s.to_string_lossy().into_owned())
                 == Some(".target".to_string())
         }));
         for c in &result {
@@ -556,7 +540,10 @@ mod tests {
         let outcome = quarantine(&bogus);
         match outcome {
             QuarantineOutcome::Failed(msg) => {
-                assert!(!msg.is_empty(), "Failed payload must carry a non-empty error string");
+                assert!(
+                    !msg.is_empty(),
+                    "Failed payload must carry a non-empty error string"
+                );
             }
             other => panic!("expected Failed for missing path, got {other:?}"),
         }
@@ -636,10 +623,7 @@ mod tests {
         assert_eq!(*d0, Decision::Allowlisted);
 
         let (c1, d1) = &decisions[1];
-        assert_eq!(
-            c1.path.file_name().and_then(|s| s.to_str()),
-            Some(".ioc")
-        );
+        assert_eq!(c1.path.file_name().and_then(|s| s.to_str()), Some(".ioc"));
         assert!(
             matches!(d1, Decision::IocMatch { sha256 } if *sha256 == ioc_hash),
             "expected IocMatch variant carrying ioc_hash, got {d1:?}",

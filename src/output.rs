@@ -183,7 +183,8 @@ mod tests {
                 .insert(field.name().to_string(), format!("{:?}", value));
         }
         fn record_str(&mut self, field: &Field, value: &str) {
-            self.fields.insert(field.name().to_string(), value.to_string());
+            self.fields
+                .insert(field.name().to_string(), value.to_string());
         }
     }
 
@@ -224,10 +225,7 @@ mod tests {
             .find(|e| e.target == "tmp-watcher")
             .expect("event with target=tmp-watcher");
         assert_eq!(event.level, tracing::Level::WARN);
-        assert_eq!(
-            event.fields.get("priority").map(String::as_str),
-            Some("4")
-        );
+        assert_eq!(event.fields.get("priority").map(String::as_str), Some("4"));
         assert_eq!(
             event.fields.get("basename").map(String::as_str),
             Some(".target")
@@ -251,10 +249,7 @@ mod tests {
             .find(|e| e.target == "tmp-watcher")
             .expect("event with target=tmp-watcher");
         assert_eq!(event.level, tracing::Level::ERROR);
-        assert_eq!(
-            event.fields.get("priority").map(String::as_str),
-            Some("2")
-        );
+        assert_eq!(event.fields.get("priority").map(String::as_str), Some("2"));
         assert_eq!(
             event.fields.get("sha256").map(String::as_str),
             Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")

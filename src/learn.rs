@@ -157,16 +157,10 @@ impl Proposer {
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        self.rotation_dir
-            .join(format!("proposed-rotate-{ts}.iocs"))
+        self.rotation_dir.join(format!("proposed-rotate-{ts}.iocs"))
     }
 
-    fn append_entry(
-        &self,
-        basename: &str,
-        sha256: &str,
-        first_seen_path: &Path,
-    ) -> Result<()> {
+    fn append_entry(&self, basename: &str, sha256: &str, first_seen_path: &Path) -> Result<()> {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -224,7 +218,11 @@ fn epoch_days_to_ymd(days: i64) -> (i32, u32, u32) {
     // Howard Hinnant's date algorithm (civil_from_days).
     // http://howardhinnant.github.io/date_algorithms.html
     let z = days + 719_468;
-    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
+    let era = if z >= 0 {
+        z / 146_097
+    } else {
+        (z - 146_096) / 146_097
+    };
     let doe = (z - era * 146_097) as u64;
     let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
     let y = yoe as i64 + era * 400;
@@ -257,12 +255,8 @@ mod tests {
         let tmp = TempDir::new("proposer_first");
         let path = tmp.path().join("proposed.iocs");
         let rotation_dir = tmp.path().join("rotate");
-        let mut p = make_proposer_with_thresholds(
-            &path,
-            10 * 1024 * 1024,
-            30 * 86400,
-            &rotation_dir,
-        );
+        let mut p =
+            make_proposer_with_thresholds(&path, 10 * 1024 * 1024, 30 * 86400, &rotation_dir);
 
         let action = p
             .observe(
@@ -278,7 +272,9 @@ mod tests {
             content.contains(".r.rpk"),
             "expected basename in proposal, got: {content}"
         );
-        assert!(content.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"));
+        assert!(
+            content.contains("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        );
         assert!(content.contains("/tmp/.r.rpk"));
         assert_eq!(p.dedupe_len(), 1);
     }
@@ -288,12 +284,8 @@ mod tests {
         let tmp = TempDir::new("proposer_dedupe");
         let path = tmp.path().join("proposed.iocs");
         let rotation_dir = tmp.path().join("rotate");
-        let mut p = make_proposer_with_thresholds(
-            &path,
-            10 * 1024 * 1024,
-            30 * 86400,
-            &rotation_dir,
-        );
+        let mut p =
+            make_proposer_with_thresholds(&path, 10 * 1024 * 1024, 30 * 86400, &rotation_dir);
 
         let first = p
             .observe(".r.rpk", "abc", Path::new("/tmp/.r.rpk"))
@@ -321,12 +313,8 @@ mod tests {
         let tmp = TempDir::new("proposer_basename_only");
         let path = tmp.path().join("proposed.iocs");
         let rotation_dir = tmp.path().join("rotate");
-        let mut p = make_proposer_with_thresholds(
-            &path,
-            10 * 1024 * 1024,
-            30 * 86400,
-            &rotation_dir,
-        );
+        let mut p =
+            make_proposer_with_thresholds(&path, 10 * 1024 * 1024, 30 * 86400, &rotation_dir);
 
         let action = p
             .observe(".weird-xdg", "", Path::new("/tmp/.weird-xdg"))
@@ -334,7 +322,10 @@ mod tests {
         assert_eq!(action, ProposalAction::Appended);
 
         let content = fs::read_to_string(&path).expect("read proposal");
-        assert!(content.contains("  -  .weird-xdg  "), "expected dash sha in: {content}");
+        assert!(
+            content.contains("  -  .weird-xdg  "),
+            "expected dash sha in: {content}"
+        );
     }
 
     #[test]
@@ -343,12 +334,8 @@ mod tests {
         let path = tmp.path().join("proposed.iocs");
         let rotation_dir = tmp.path().join("rotate");
 
-        let mut p1 = make_proposer_with_thresholds(
-            &path,
-            10 * 1024 * 1024,
-            30 * 86400,
-            &rotation_dir,
-        );
+        let mut p1 =
+            make_proposer_with_thresholds(&path, 10 * 1024 * 1024, 30 * 86400, &rotation_dir);
         p1.observe(".r.rpk", "abc", Path::new("/tmp/.r.rpk"))
             .expect("first observe");
 
@@ -401,8 +388,7 @@ mod tests {
 
         let mut p = Proposer::new(&proposal).expect("proposer");
         for _ in 0..100 {
-            p.observe(".x", "", Path::new("/tmp/.x"))
-                .expect("observe");
+            p.observe(".x", "", Path::new("/tmp/.x")).expect("observe");
         }
 
         let post = fs::read(&live).expect("read live IOC list");

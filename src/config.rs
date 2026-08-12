@@ -211,7 +211,8 @@ actions:
     #[test]
     fn validate_passes_default() {
         let cfg = load_config(None).expect("default config must parse");
-        cfg.validate().expect("embedded default config must validate");
+        cfg.validate()
+            .expect("embedded default config must validate");
     }
 
     #[test]
@@ -266,7 +267,9 @@ actions:
   alert_on_unknown: true
 "#;
         let cfg = load_from_yaml(yaml);
-        let err = cfg.validate().expect_err("scan_window_minutes == 0 must fail");
+        let err = cfg
+            .validate()
+            .expect_err("scan_window_minutes == 0 must fail");
         assert!(err.to_string().contains("scan_window_minutes"));
     }
 
@@ -316,7 +319,9 @@ actions:
   alert_on_unknown: true
 "#;
         let cfg = load_from_yaml(yaml);
-        let err = cfg.validate().expect_err("max_files_per_dir > 10 must fail");
+        let err = cfg
+            .validate()
+            .expect_err("max_files_per_dir > 10 must fail");
         assert!(err.to_string().contains("max_files_per_dir"));
     }
 

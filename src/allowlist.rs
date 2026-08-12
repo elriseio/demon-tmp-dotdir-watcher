@@ -132,8 +132,7 @@ mod tests {
     fn load_returns_empty_on_missing_file() {
         let bogus = std::env::temp_dir().join("demon_allowlist_definitely_missing_67890");
         let _ = fs::remove_file(&bogus);
-        let a =
-            Allowlist::load(&bogus).expect("missing file must yield Ok(empty), not Err");
+        let a = Allowlist::load(&bogus).expect("missing file must yield Ok(empty), not Err");
         assert!(a.is_empty());
         assert_eq!(a.len(), 0);
     }

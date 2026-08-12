@@ -37,8 +37,7 @@ impl Matcher {
     }
 
     pub fn load(path: &Path) -> Result<Matcher> {
-        let file =
-            File::open(path).with_context(|| format!("open IOC list {}", path.display()))?;
+        let file = File::open(path).with_context(|| format!("open IOC list {}", path.display()))?;
         let reader = BufReader::new(file);
         let mut hashes = HashSet::new();
         for (lineno, line_result) in reader.lines().enumerate() {
@@ -83,8 +82,7 @@ impl Matcher {
 
 pub fn hash_file(path: &Path) -> Result<String> {
     let mut hasher = Sha256::new();
-    let file = File::open(path)
-        .with_context(|| format!("open file to hash {}", path.display()))?;
+    let file = File::open(path).with_context(|| format!("open file to hash {}", path.display()))?;
     let mut reader = BufReader::new(file);
     let mut buf = [0u8; 8192];
     loop {
@@ -103,8 +101,7 @@ pub fn is_valid_sha256_hex(s: &str) -> bool {
     if s.len() != 64 {
         return false;
     }
-    s.bytes()
-        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[cfg(test)]
@@ -113,8 +110,7 @@ mod tests {
     use crate::test_util::TempFile;
     use std::fs;
 
-    const VALID_HASH: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const VALID_HASH: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     #[test]
     fn is_valid_sha256_hex_truth_table() {
@@ -178,9 +174,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
         let f = TempFile::with_content("roundtrip", content.as_bytes());
         let m = Matcher::load(f.path()).expect("load");
         assert!(m.contains(VALID_HASH));
-        assert!(!m.contains(
-            "0000000000000000000000000000000000000000000000000000000000000000"
-        ));
+        assert!(!m.contains("0000000000000000000000000000000000000000000000000000000000000000"));
     }
 
     #[test]
@@ -189,10 +183,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
         let content = format!("{upper}\n");
         let f = TempFile::with_content("uppercase", content.as_bytes());
         let res = Matcher::load(f.path());
-        assert!(
-            res.is_err(),
-            "uppercase hex must be rejected per contract"
-        );
+        assert!(res.is_err(), "uppercase hex must be rejected per contract");
     }
 
     #[test]
@@ -214,8 +205,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 
     #[test]
     fn hash_file_known_value() {
-        let expected =
-            "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119";
+        let expected = "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119";
         let f = TempFile::with_content("hash_known", &[0u8, 0u8, 0u8, 0u8]);
         let got = hash_file(f.path()).expect("hash_file");
         assert_eq!(got, expected);
@@ -226,7 +216,9 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
         let f = TempFile::with_content("hash_case", b"hello world\n");
         let result = hash_file(f.path()).expect("hash");
         assert_eq!(result.len(), 64);
-        assert!(result.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')));
+        assert!(result
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')));
     }
 
     #[test]

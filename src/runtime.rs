@@ -80,15 +80,14 @@ impl Runtime {
                 Matcher::empty()
             }
         };
-        let allowlist = Allowlist::load(&cfg.allowlist.allowlist)
-            .context("load allowlist")?;
+        let allowlist = Allowlist::load(&cfg.allowlist.allowlist).context("load allowlist")?;
         let proposer_path = cfg
             .ioc
             .proposed_iocs
             .clone()
             .unwrap_or_else(|| PathBuf::from("/etc/tmp-watcher.proposed.iocs"));
-        let proposer = Proposer::new(&proposer_path)
-            .context("init proposal file at runtime startup")?;
+        let proposer =
+            Proposer::new(&proposer_path).context("init proposal file at runtime startup")?;
         Ok(Self {
             cfg,
             matcher,
@@ -110,11 +109,8 @@ impl Runtime {
     ///      a `ntfy_url` field; see implementation notes below.)
     pub async fn run_once(&mut self) -> Result<RunSummary> {
         let candidates = subsystem::walk(&self.cfg);
-        let decisions = subsystem::walk_decision_pipeline(
-            candidates,
-            &self.matcher,
-            &self.allowlist,
-        );
+        let decisions =
+            subsystem::walk_decision_pipeline(candidates, &self.matcher, &self.allowlist);
 
         let mut summary = RunSummary {
             candidates: decisions.len(),
@@ -124,11 +120,7 @@ impl Runtime {
         for (c, d) in &decisions {
             // basename is recomputed from c.path; the pipeline
             // derives it once for allowlist.allows.
-            let basename = c
-                .path
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
+            let basename = c.path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
             match d {
                 Decision::Skipped(reason) => {
@@ -157,7 +149,9 @@ impl Runtime {
                             QuarantineOutcome::Applied => {
                                 summary.quarantined += 1;
                                 output::emit_ioc_match(basename, &c.path, sha256.as_str());
-                                if let Err(e) = push_ntfy_for_match(basename, &c.path, sha256.as_str()).await {
+                                if let Err(e) =
+                                    push_ntfy_for_match(basename, &c.path, sha256.as_str()).await
+                                {
                                     warn!(
                                         target: "tmp-watcher",
                                         priority = 4,
@@ -197,10 +191,7 @@ impl Runtime {
                         .first()
                         .and_then(|entry| crate::ioc::hash_file(entry).ok())
                         .unwrap_or_default();
-                    if let Err(e) =
-                        self.proposer
-                            .observe(basename, &sha_for_proposer, &c.path)
-                    {
+                    if let Err(e) = self.proposer.observe(basename, &sha_for_proposer, &c.path) {
                         error!(
                             target: "tmp-watcher",
                             priority = 2,
@@ -274,11 +265,7 @@ impl Runtime {
 /// this task per the issue's scope); `output::ntfy_push(None, …)`
 /// is a documented no-op. The runtime path is wired so adding
 /// the config field later is a one-line change.
-async fn push_ntfy_for_match(
-    basename: &str,
-    path: &Path,
-    hash: &str,
-) -> Result<()> {
+async fn push_ntfy_for_match(basename: &str, path: &Path, hash: &str) -> Result<()> {
     let title = format!("tmp-watcher IOC match: {basename}");
     let body = format!("path={} sha256={}", path.display(), hash);
     output::ntfy_push(None, &title, &body).await
@@ -288,8 +275,7 @@ async fn push_ntfy_for_match(
 mod tests {
     use super::*;
     use crate::config::{
-        ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig,
-        RuntimeConfig,
+        ActionsConfig, AllowlistConfig, Config, IocConfig, LogConfig, PathsConfig, RuntimeConfig,
     };
     use crate::ioc::hash_file;
     use crate::test_util::{TempDir, TempFile};
@@ -354,8 +340,7 @@ mod tests {
         assert_eq!(summary.unknown, 0, "expected 0 unknown");
 
         // Read the mode BEFORE restoring for the TempDir Drop.
-        let mode_after_quarantine =
-            fs::metadata(&dot).unwrap().permissions().mode() & 0o777;
+        let mode_after_quarantine = fs::metadata(&dot).unwrap().permissions().mode() & 0o777;
         // Best-effort restore so the TempDir's recursive removal
         // can walk the directory.
         let _ = fs::set_permissions(&dot, fs::Permissions::from_mode(0o755));
@@ -498,6 +483,9 @@ mod tests {
             content.contains(&hash),
             "expected sha256 in proposal, got: {content}"
         );
-        assert!(content.contains("/.unknown-target/a.txt") || content.contains(&dot.display().to_string()));
+        assert!(
+            content.contains("/.unknown-target/a.txt")
+                || content.contains(&dot.display().to_string())
+        );
     }
 }
