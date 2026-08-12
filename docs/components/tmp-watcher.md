@@ -41,7 +41,7 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | Input | Source | Format | Path |
 |---|---|---|---|
 | Configuration | daemon args + env overlay | YAML | `config/default.yaml` (default) or arg `<CONFIG_PATH>` |
-| IOC list | operator-curated file | one SHA-256 per line | `/etc/tmp-watcher.iocs` |
+| IOC list | operator-curated file (optional at first start) | one SHA-256 per line; baseline empty matcher when missing or comments-only | `/etc/tmp-watcher.iocs` |
 | Allowlist | operator-curated file | one glob per line | `/etc/tmp-watcher.allowlist` |
 | Scan roots | config | list of paths | `/tmp`, `/home`, `/var/tmp` (defaults) |
 | Forensic archive (optional) | operator-mounted read-only | tar.gz | operator-supplied path (per-host) |
@@ -121,7 +121,7 @@ port; if they drift, the contract is right and the impl is wrong.
 | Failure | Detection | Response |
 |---|---|---|
 | Boots but config invalid | systemd `PreStart` or first `info!` | exit non-zero; systemd `Restart=on-failure` retries |
-| IOC list missing | subsystem startup probe | log to journal + NTFY; skip scan; exit 0 |
+| IOC list missing | subsystem startup probe | log to journal (INFO); use empty Matcher baseline; proceed with scan (every candidate classifies as Unknown) |
 | Allowlist missing | subsystem startup probe | log to journal; use empty in-memory allowlist; proceed |
 | `/run/tmp-watcher/` not writable | mkdir probe | exit non-zero; systemd retries |
 | `/var/log/tmp-watcher.log` not writable | open() probe | log to journal only; continue |

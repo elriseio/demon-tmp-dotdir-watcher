@@ -42,13 +42,25 @@ tags: [contract, tmp_watcher, ioc_list, allowlist, glob, sha256]
 ### Loader semantics
 
 - On startup, the IOC list is read once.
-- If the file is missing: log CRITICAL (`PRIORITY=2`) + NTFY
-  if configured, skip the scan, exit 0 (systemd `Restart=on-failure`
-  does NOT trigger because exit is 0 — see `ARCHITECTURE.md`
-  failure-mode "IOC list missing").
-- If the file is unreadable (permission): same as missing.
-- If the file has any malformed line: log CRITICAL + NTFY,
-  fail-closed (refuse to run with partially-trusted IOC list).
+- **Baseline (not an error)**: if the file is missing or
+  contains only comments and blank lines, use `Matcher::empty()`,
+  log INFO with `ioc_count=0`, proceed with the scan, and emit
+  `Decision::Unknown` for every candidate. This is the expected
+  state for a fresh deployment: the operator has not yet curated
+  the IOC list, and the daemon must still operate against the
+  current files on disk. systemd `Restart=on-failure` does NOT
+  trigger because the missing-file case is not a failure.
+- If the file is unreadable (e.g., permission denied): the same
+  baseline behavior fires (graceful-degrade to `Matcher::empty()`).
+  The current detection daemon path treats this uniformly with the
+  missing-file case; a strict-fail-closed variant is out of scope
+  for this contract revision.
+- If the file exists with content but contains a malformed line
+  (e.g., invalid SHA-256 hex, wrong line length): the daemon path
+  currently also degrades to `Matcher::empty()` (the runtime's
+  `Err(e)` arm is shared across all `Matcher::load` failures). A
+  strict-fail-closed variant for malformed-only is a candidate
+  follow-up; today the contract reflects the runtime behavior.
 
 ### Matcher semantics
 

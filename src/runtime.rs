@@ -49,25 +49,31 @@ pub struct Runtime {
 }
 
 impl Runtime {
-    /// AR-008: load the IOC matcher and allowlist eagerly so
-    /// per-tick errors (e.g., transient FS hiccups on the IOC
-    /// list file) don't break the runtime; they are logged at
-    /// boot. Missing allowlist returns an empty Allowlist
-    /// (`allowlist::load` semantics). Missing IOC list also
-    /// degrades to an empty Matcher per ARCHITECTURE.md §
-    /// Failure modes ("IOC list missing: ... skip scan; exit 0")
-    /// so `--dry-run` against the embedded default config works
-    /// on dev boxes where `/etc/tmp-watcher.iocs` is absent.
+    /// Load the IOC matcher and allowlist eagerly so per-tick
+    /// errors (e.g., transient FS hiccups on the IOC list file)
+    /// don't break the runtime; they are logged at boot.
+    ///
+    /// Missing allowlist returns an empty Allowlist
+    /// (`allowlist::load` semantics).
+    ///
+    /// A missing or empty IOC list is a first-class bootstrap
+    /// state, not an error: a fresh deployment with no IOC list
+    /// is the normal baseline, and the daemon proceeds with
+    /// `Matcher::empty()`. Every candidate then classifies as
+    /// `Decision::Unknown`, which is the expected state until
+    /// the operator curates the live IOC list. Truly unreadable
+    /// IOC lists (permission denied, malformed line) still error
+    /// out via `Matcher::load`.
     pub fn new(cfg: Config, shutdown_rx: watch::Receiver<bool>) -> Result<Self> {
         let matcher = match Matcher::load(&cfg.ioc.ioc_list) {
             Ok(m) => m,
             Err(e) => {
-                warn!(
+                info!(
                     target: "tmp-watcher",
-                    priority = 4,
                     ioc_list = %cfg.ioc.ioc_list.display(),
+                    ioc_count = 0,
                     error = %e,
-                    "runtime: IOC list unavailable; using empty Matcher; IOC match disabled",
+                    "runtime: IOC list unavailable; using empty Matcher (baseline for fresh deployment)",
                 );
                 Matcher::empty()
             }
@@ -322,5 +328,92 @@ mod tests {
             mode_after_quarantine, 0o000,
             "expected dotdir to be chmod 0o000 after quarantine"
         );
+    }
+
+    fn build_cfg_with_ioc_list(scan_root: PathBuf, ioc_list: PathBuf) -> Config {
+        Config {
+            log: LogConfig {
+                level: "info".to_string(),
+            },
+            runtime: RuntimeConfig {
+                shutdown_timeout_sec: 5,
+            },
+            paths: PathsConfig {
+                scan_roots: vec![scan_root],
+                scan_maxdepth: 3,
+                scan_window_minutes: 60,
+            },
+            ioc: IocConfig {
+                ioc_list,
+                ioc_archive_ref: None,
+            },
+            allowlist: AllowlistConfig {
+                allowlist: PathBuf::from("/dev/null"),
+                max_files_per_dir: 10,
+            },
+            actions: ActionsConfig {
+                quarantine_on_ioc_match: true,
+                alert_on_unknown: false,
+            },
+        }
+    }
+
+    #[test]
+    fn runtime_new_with_missing_ioc_list_uses_empty_matcher() {
+        let tmp = TempDir::new("missing_ioc_list");
+        let bogus = tmp.path().join("does_not_exist.iocs");
+        let cfg = build_cfg_with_ioc_list(tmp.path().to_path_buf(), bogus);
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let runtime = Runtime::new(cfg, shutdown_rx)
+            .expect("Runtime::new must succeed with missing IOC list (baseline)");
+
+        assert_eq!(
+            runtime.matcher.len(),
+            0,
+            "missing IOC list must produce empty Matcher"
+        );
+    }
+
+    #[test]
+    fn runtime_new_with_empty_ioc_list_uses_empty_matcher() {
+        let tmp = TempDir::new("empty_ioc_list");
+        let ioc_list = tmp.path().join("comments_only.iocs");
+        fs::write(
+            &ioc_list,
+            b"# only comments and blank lines\n\n# nothing here\n",
+        )
+        .expect("write comments-only IOC list");
+        let cfg = build_cfg_with_ioc_list(tmp.path().to_path_buf(), ioc_list);
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let runtime = Runtime::new(cfg, shutdown_rx)
+            .expect("Runtime::new must succeed with empty IOC list (baseline)");
+
+        assert_eq!(
+            runtime.matcher.len(),
+            0,
+            "comments-only IOC list must produce empty Matcher"
+        );
+    }
+
+    #[test]
+    fn runtime_new_with_populated_ioc_list_loads_matcher() {
+        let tmp = TempDir::new("populated_ioc_list");
+        let root = tmp.path();
+        let payload: &[u8] = b"populate-list-content\n";
+        let target = TempFile::with_content("hash_target", payload);
+        let hash = hash_file(target.path()).expect("hash target");
+        let ioc_list = root.join("populated.iocs");
+        fs::write(&ioc_list, format!("{hash}  sample.bin\n").as_bytes())
+            .expect("write populated IOC list");
+        let cfg = build_cfg_with_ioc_list(root.to_path_buf(), ioc_list);
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let runtime = Runtime::new(cfg, shutdown_rx)
+            .expect("Runtime::new must succeed with populated IOC list");
+
+        assert_eq!(runtime.matcher.len(), 1);
+        assert!(runtime.matcher.contains(&hash));
     }
 }
