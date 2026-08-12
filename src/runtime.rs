@@ -140,8 +140,8 @@ impl Runtime {
                         match outcome {
                             QuarantineOutcome::Applied => {
                                 summary.quarantined += 1;
-                                output::emit_ioc_match(basename, &c.path, &sha256);
-                                if let Err(e) = push_ntfy_for_match(basename, &c.path, &sha256).await {
+                                output::emit_ioc_match(basename, &c.path, sha256.as_str());
+                                if let Err(e) = push_ntfy_for_match(basename, &c.path, sha256.as_str()).await {
                                     warn!(
                                         target: "tmp-watcher",
                                         priority = 4,
@@ -155,14 +155,14 @@ impl Runtime {
                                 // poll; the IOC match still
                                 // triggers the journal event so
                                 // operators see the recurrence.
-                                output::emit_ioc_match(basename, &c.path, &sha256);
+                                output::emit_ioc_match(basename, &c.path, sha256.as_str());
                             }
                             QuarantineOutcome::Failed(err) => {
                                 output::emit_ioc_quarantine_failed(&c.path, &err);
                             }
                         }
                     } else {
-                        output::emit_ioc_match(basename, &c.path, &sha256);
+                        output::emit_ioc_match(basename, &c.path, sha256.as_str());
                     }
                 }
                 Decision::Unknown => {
