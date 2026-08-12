@@ -91,7 +91,7 @@ pub fn quarantine(path: &Path) -> QuarantineOutcome {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Allowlisted,
-    IocMatch,
+    IocMatch { sha256: String },
     Unknown,
     Skipped(SkipReason),
 }
@@ -133,7 +133,7 @@ fn classify(c: &Candidate, matcher: &Matcher, allowlist: &Allowlist) -> Decision
         match hash_file(entry) {
             Ok(h) => {
                 if matcher.contains(&h) {
-                    return Decision::IocMatch;
+                    return Decision::IocMatch { sha256: h };
                 }
             }
             Err(e) => warn!(
@@ -639,7 +639,10 @@ mod tests {
             c1.path.file_name().and_then(|s| s.to_str()),
             Some(".ioc")
         );
-        assert_eq!(*d1, Decision::IocMatch);
+        assert!(
+            matches!(d1, Decision::IocMatch { sha256 } if *sha256 == ioc_hash),
+            "expected IocMatch variant carrying ioc_hash, got {d1:?}",
+        );
 
         let (c2, d2) = &decisions[2];
         assert_eq!(

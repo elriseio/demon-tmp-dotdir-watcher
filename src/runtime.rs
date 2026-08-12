@@ -136,16 +136,15 @@ impl Runtime {
                         "runtime: candidate allowlisted",
                     );
                 }
-                Decision::IocMatch => {
+                Decision::IocMatch { sha256 } => {
                     summary.ioc_matches += 1;
-                    let hash = matching_hash(c, &self.matcher);
                     if self.cfg.actions.quarantine_on_ioc_match {
                         let outcome = subsystem::quarantine(&c.path);
                         match outcome {
                             QuarantineOutcome::Applied => {
                                 summary.quarantined += 1;
-                                output::emit_ioc_match(basename, &c.path, &hash);
-                                if let Err(e) = push_ntfy_for_match(basename, &c.path, &hash).await {
+                                output::emit_ioc_match(basename, &c.path, &sha256);
+                                if let Err(e) = push_ntfy_for_match(basename, &c.path, &sha256).await {
                                     warn!(
                                         target: "tmp-watcher",
                                         priority = 4,
@@ -159,14 +158,14 @@ impl Runtime {
                                 // poll; the IOC match still
                                 // triggers the journal event so
                                 // operators see the recurrence.
-                                output::emit_ioc_match(basename, &c.path, &hash);
+                                output::emit_ioc_match(basename, &c.path, &sha256);
                             }
                             QuarantineOutcome::Failed(err) => {
                                 output::emit_ioc_quarantine_failed(&c.path, &err);
                             }
                         }
                     } else {
-                        output::emit_ioc_match(basename, &c.path, &hash);
+                        output::emit_ioc_match(basename, &c.path, &sha256);
                     }
                 }
                 Decision::Unknown => {
@@ -232,23 +231,6 @@ impl Runtime {
             }
         }
     }
-}
-
-/// Re-hash each entry of the candidate and find the first one
-/// whose SHA-256 is in the matcher. The pipeline already
-/// classified the candidate as IocMatch, so this is guaranteed
-/// to find a match in practice; we still return a placeholder
-/// `""` hash on miss so `output::emit_ioc_match` always has a
-/// non-None argument (its signature requires `&str`).
-fn matching_hash(c: &crate::subsystem::Candidate, matcher: &Matcher) -> String {
-    for entry in &c.entries {
-        if let Ok(h) = hash_file(entry) {
-            if matcher.contains(&h) {
-                return h;
-            }
-        }
-    }
-    String::new()
 }
 
 /// AR-008: NTFY push for an IOC match. `url` is `None` until
