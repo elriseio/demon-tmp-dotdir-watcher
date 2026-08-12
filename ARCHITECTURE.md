@@ -11,8 +11,9 @@ Detect and quarantine hidden Azazel-style malware footprints
 under `/tmp/.dotdir/`, `/home/<user>/.atmp/...`, and similar
 shallow dot-directories, by polling every 10 minutes and matching
 newly-created entries against a known-bad SHA-256 list. Origin of
-the spec: the 2026-08-09 Azazel compromise on `elrise-backend`
-(see `notes/2026-08-09-elrise-compromise-malware-analysis.md`).
+the spec: an Azazel-family compromise on an affected host that
+informed the threat model and IOC list (see ORIGIN.md
+§ "Problem it solves").
 
 ## Current state
 
@@ -125,5 +126,5 @@ Rust port lands:
 - ORIGIN.md — operator-facing description
 - RUNBOOK.md — operator triage flow
 - DAEMON.md — on-ramp summary
-- notes/2026-08-09-elrise-compromise-malware-analysis.md —
-  the incident that produced this spec
+- ORIGIN.md § "Problem it solves" — the Azazel-family compromise
+  that informed the original spec.

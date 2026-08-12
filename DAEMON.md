@@ -48,11 +48,10 @@ The Cargo.toml / src/ main.rs available here are a scaffold only.
    this daemon does, when it fires, and what it should never do".
    Anything in this folder that contradicts ORIGIN.md is a bug.
 2. **Forensics origin.** This daemon was specified the same day
-   as the 2026-08-09 Azazel compromise analysis
-   (`notes/2026-08-09-elrise-compromise-malware-analysis.md`).
-   The problem statement, IOC list, and allowlist are derived
-   directly from that incident. When changing the IOC list,
-   cite the originating incident in the commit message.
+   as an Azazel-family compromise analysis. The problem statement,
+   IOC list, and allowlist are derived directly from that
+   incident. When changing the IOC list, cite the originating
+   threat family in the commit message.
 3. **State directory and config live on the host** under
    `/run/tmp-watcher/`, `/var/log/tmp-watcher.log`, and
    `/etc/tmp-watcher.{conf,allowlist,iocs}` (see ORIGIN.md

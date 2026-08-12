@@ -57,8 +57,8 @@ by the systemd-journal shipping path. Verify with
    sudo chmod 000 /tmp/.dotdir/.r.rpk  # re-quarantine
    ```
 3. Compare the file hashes against the canonical IOCs at
-   `/etc/tmp-watcher.iocs` and the forensic archive at
-   `/opt/forensics/2026-08-09-elrise-compromise.tar.gz`.
+   `/etc/tmp-watcher.iocs` and against any operator-supplied
+   forensic archive referenced from the per-host IOC source.
 4. Capture:
    ```bash
    sudo tar -cz /tmp/.dotdir > /tmp/ioc-matched-dirs.tgz 2>/dev/null
@@ -68,7 +68,7 @@ by the systemd-journal shipping path. Verify with
    services, then `iptables -I INPUT -s <host> -j DROP` for
    upstream containment).
 6. Begin incident-response per the playbook in
-   `notes/2026-08-09-elrise-compromise-malware-analysis.md`.
+   the post-incident write-up in the operator's notes tree.
 
 **Escalation:** open an incident; the original Azazel analysis
 chain is the canonical reference.
@@ -92,7 +92,7 @@ not match the IOC list and is not in the allowlist.
 3. If the contents are unknown binaries: treat as a potential
    IOC, follow CRITICAL flow above.
 
-**Escalation:** if the path matches a 2026-08-09 Azazel pattern
+**Escalation:** if the path matches an Azazel-style pattern
 (`.r.rpk`, `.xdiag`, `.perf.c`, `.apid`, `.atmp`) at all,
 escalate immediately.
 
@@ -205,5 +205,5 @@ with the matched path, hash, and quarantine action.
 - ORIGIN.md — full description
 - ARCHITECTURE.md — invariants
 - DAEMON.md — on-ramp
-- notes/2026-08-09-elrise-compromise-malware-analysis.md —
-  the incident that produced this spec
+- ORIGIN.md § "Problem it solves" — the Azazel-family compromise
+  that informed the original spec.

@@ -23,13 +23,12 @@ tags: [architecture, status, daemon, tmp_watcher, rust_port]
 Rust daemon that detects and quarantines hidden Azazel-style
 malware footprints under `/tmp/.dotdir/`, `/home/<user>/.atmp/...`,
 and similar shallow dot-directories. The daemon was specified the
-same day as the 2026-08-09 Azazel compromise on `elrise-backend`
-(see `notes/2026-08-09-elrise-compromise-malware-analysis.md` in
-the operator's notes tree).
+same day as an Azazel-family compromise on an affected host
+(see the post-incident write-up in the operator's notes tree).
 
 Business goal:
 
-- **Detection latency reduction.** The 2026-08-09 incident lived
+- **Detection latency reduction.** The originating incident lived
   undetected for 72 hours despite Prometheus + Uptime Kuma + Loki
   monitoring. `tmp-watcher` polls every 10 minutes, so a new
   Azazel-style footprint is detected within the first poll cycle

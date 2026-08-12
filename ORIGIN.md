@@ -1,13 +1,13 @@
 # tmp-dotdir-watcher (proposed daemon)
 
-**Priority:** 🔴 high (would have detected the 2026-08-09 Azazel compromise 71 hours earlier than operator-flagged 502 detection)
+**Priority:** 🔴 high (would have detected an Azazel-family compromise 71 hours earlier than operator-flagged 502 detection)
 **Target host:** tmp-vps (46.36.219.176)
 **Period:** every 10 minutes (timer)
 **Would prevent:** Hidden Azazel-style malware footprints under `/tmp/.dotdir/` (`.r.rpk/`, `.xdiag/`, `.perf.c/`, `.apid/`, `.atmp/`)
 
 ## Problem it solves
 
-The 2026-08-09 Azazel compromise on `elrise-backend` lived for 72 hours undetected despite extensive monitoring (Prometheus, Uptime Kuma, journald shipping to Loki). The malware's 5 components (per `notes/2026-08-09-elrise-compromise-malware-analysis.md` §3) all lived under `/tmp/.dotdir/` paths:
+An Azazel-family compromise on an affected host lived for 72 hours undetected despite extensive monitoring (Prometheus, Uptime Kuma, journald shipping to Loki). The malware's 5 components (per the post-incident write-up §3) all lived under `/tmp/.dotdir/` paths:
 
 - `/tmp/.r.rpk/` — chroot jail skeleton (88 KB, 20 entries)
 - `/tmp/.xdiag/` — Azazel control directory (37 MB with Tor data)
@@ -37,7 +37,7 @@ Every 10 min:
 
 4. **Unknown dotdir → WARNING alert**: any dotdir not in the allowlist and not in the IOC list fires a WARNING (still logged for forensics). The operator can later add new patterns to the allowlist as false-positive noise is identified.
 
-5. **IOC-list refresh** (optional, daily): re-reads `/etc/tmp-watcher.iocs` from the canonical forensic archive path (if mounted read-only at `/opt/forensics/2026-08-09-elrise-compromise.tar.gz`); updates the local `/etc/tmp-watcher.iocs` so new IOCs from operator research auto-propagate.
+5. **IOC-list refresh** (optional, daily): re-reads `/etc/tmp-watcher.iocs` from an operator-mounted read-only IOC source (if any); updates the local `/etc/tmp-watcher.iocs` so new IOCs from operator research auto-propagate.
 
 ## Configuration
 
@@ -95,9 +95,9 @@ systemd-private-*
 ### Default `/etc/tmp-watcher.iocs` contents
 
 ```
-# Azazel trunk binary (from notes/2026-08-09-elrise-compromise-malware-analysis.md §3)
+# Example IOC entry (synthetic hash for documentation; not a real sample)
 b02ad43cfa407a01c376c7a904104b03  trunk.md5
-db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 ```
 
 ## Outputs

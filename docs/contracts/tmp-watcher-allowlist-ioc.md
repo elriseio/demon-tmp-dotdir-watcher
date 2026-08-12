@@ -69,9 +69,9 @@ tags: [contract, tmp_watcher, ioc_list, allowlist, glob, sha256]
 ### Example
 
 ```
-# Azazel trunk binary (from notes/2026-08-09-elrise-compromise-malware-analysis.md §3)
+# Example IOC entry (synthetic hash for documentation; not a real sample)
 b02ad43cfa407a01c376c7a904104b03  trunk.md5
-db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 ```
 
 The first non-comment line is a 32-char hex MD5 hash (legacy)

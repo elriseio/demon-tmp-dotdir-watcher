@@ -63,9 +63,9 @@ present in tree.
 ### `wave-forensic-archive-auto-refresh-003`
 
 Per `ORIGIN.md` "IOC-list refresh (optional, daily)": add the
-sidecar that re-reads `/etc/tmp-watcher.iocs` from
-`/opt/forensics/2026-08-09-elrise-compromise.tar.gz` (mounted
-read-only) and updates the host-local IOC list.
+sidecar that re-reads `/etc/tmp-watcher.iocs` from an
+operator-mounted read-only IOC source (tar.gz) and updates the
+host-local IOC list.
 
 Exit criteria: a new IOC hash added to the forensic archive
 appears in `/etc/tmp-watcher.iocs` within 24 h without

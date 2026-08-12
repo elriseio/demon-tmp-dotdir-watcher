@@ -44,7 +44,7 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | IOC list | operator-curated file | one SHA-256 per line | `/etc/tmp-watcher.iocs` |
 | Allowlist | operator-curated file | one glob per line | `/etc/tmp-watcher.allowlist` |
 | Scan roots | config | list of paths | `/tmp`, `/home`, `/var/tmp` (defaults) |
-| Forensic archive (optional) | operator-mounted read-only | tar.gz | `/opt/forensics/2026-08-09-elrise-compromise.tar.gz` |
+| Forensic archive (optional) | operator-mounted read-only | tar.gz | operator-supplied path (per-host) |
 | NTFY URL (optional) | env | URL string | `${NTFY_URL}` |
 
 ## Outputs

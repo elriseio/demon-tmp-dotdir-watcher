@@ -114,7 +114,7 @@ mod tests {
     use std::fs;
 
     const VALID_HASH: &str =
-        "db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c";
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
     #[test]
     fn is_valid_sha256_hex_truth_table() {
@@ -133,10 +133,10 @@ mod tests {
     #[test]
     fn load_skips_comments_and_blank_lines() {
         let content = b"\
-# Azazel trunk binary (from notes/2026-08-09-elrise-compromise-malware-analysis.md)
+# Example IOC entry (synthetic hash for documentation; not a real sample)
 
 
-db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 ";
         let f = TempFile::with_content("skip", content);
         let m = Matcher::load(f.path()).expect("load must succeed");
@@ -148,9 +148,9 @@ db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
     fn load_skips_legacy_md5_and_other_non_64_char_lines() {
         let content = b"\
 b02ad43cfa407a01c376c7a904104b03  trunk.md5
-sha256=db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c
+sha256=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 \
-db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 ";
         let f = TempFile::with_content("legacy", content);
         let m = Matcher::load(f.path()).expect("load must succeed");

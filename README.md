@@ -6,8 +6,8 @@ Crate:           demon-tmp-dotdir-watcher (v0.1.0)
 Edition / MSRV:  Rust 2021 / 1.74
 Host target:     tmp-vps (46.36.219.176)
 Cadence:         every 10 minutes (systemd timer)
-Severity:        high — would have detected the 2026-08-09 Azazel
-                 compromise on elrise-backend 71 hours earlier than
+Severity:        high — would have detected an Azazel-family
+                 compromise on an affected host 71 hours earlier than
                  operator-flagged 502 detection
 ```
 
@@ -200,16 +200,16 @@ candidate dotdir and looks up the hash string. Lines that are
 blank or start with `#` are ignored.
 
 ```text
-# Azazel trunk binary, 2026-08-09 incident
+# Example IOC entry (synthetic hash for documentation; not a real sample)
 b02ad43cfa407a01c376c7a904104b03  trunk.md5
-db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c  trunk.sha256
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  trunk.sha256
 ```
 
 A missing IOC list is treated as an empty list — the daemon
 boots, logs a warning, and continues scanning. This is the
 documented behaviour for dev boxes; production deploys must
 keep the file populated and review it against the canonical
-forensic archive at `/opt/forensics/2026-08-09-elrise-compromise.tar.gz`.
+forensic archive (operator-supplied path via per-host config).
 
 ## Allowlist
 
@@ -405,9 +405,9 @@ demon-tmp-dotdir-watcher/
 - `docs/contracts/tmp-watcher-allowlist-ioc.md` — file shape
   contract for the allowlist and IOC list (required by the
   loader; do not change without updating this contract).
-- `notes/2026-08-09-elrise-compromise-malware-analysis.md` —
-  the incident that produced this spec; reference for any IOC
-  update.
+- ORIGIN.md § "Problem it solves" — the originating incident that
+  informed the original spec (Azazel-family malware in shallow
+  dot-directories). Reference for the threat model.
 
 ## Source of truth
 

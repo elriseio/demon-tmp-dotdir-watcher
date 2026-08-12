@@ -241,7 +241,7 @@ mod tests {
             emit_ioc_match(
                 ".target",
                 Path::new("/tmp/.target"),
-                "db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c",
+                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
             );
         });
 
@@ -257,7 +257,7 @@ mod tests {
         );
         assert_eq!(
             event.fields.get("sha256").map(String::as_str),
-            Some("db338d19241c95d42c4da2888ade4d8bc6286e3b5689e3746771918c6c3b1b8c")
+            Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
         );
     }
 
