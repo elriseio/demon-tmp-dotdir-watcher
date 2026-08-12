@@ -13,6 +13,7 @@ use crate::config::{load_config, LogConfig};
 mod allowlist;
 mod config;
 mod ioc;
+mod learn;
 mod output;
 mod runtime;
 mod subsystem;
@@ -155,7 +156,7 @@ async fn main() -> Result<()> {
         init_logging_stderr(&cfg.log)?;
         info!(target: "tmp-watcher", "dry-run: starting one poll tick");
         let (_tx, shutdown_rx) = watch::channel(false);
-        let runtime = runtime::Runtime::new(cfg, shutdown_rx)
+        let mut runtime = runtime::Runtime::new(cfg, shutdown_rx)
             .context("build runtime for --dry-run")?;
         let summary = runtime
             .run_once()

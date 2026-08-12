@@ -49,6 +49,8 @@ pub struct PathsConfig {
 pub struct IocConfig {
     pub ioc_list: PathBuf,
     pub ioc_archive_ref: Option<PathBuf>,
+    #[serde(default)]
+    pub proposed_iocs: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,6 +143,9 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
     }
     if let Ok(v) = std::env::var("DEMON_IOC__IOC_ARCHIVE_REF") {
         cfg.ioc.ioc_archive_ref = Some(PathBuf::from(v));
+    }
+    if let Ok(v) = std::env::var("DEMON_IOC__PROPOSED_IOCS") {
+        cfg.ioc.proposed_iocs = Some(PathBuf::from(v));
     }
     if let Ok(v) = std::env::var("DEMON_ALLOWLIST__ALLOWLIST") {
         cfg.allowlist.allowlist = PathBuf::from(v);

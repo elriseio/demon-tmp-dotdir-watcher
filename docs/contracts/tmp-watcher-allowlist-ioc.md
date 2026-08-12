@@ -151,6 +151,97 @@ systemd-private-*
   daemon does NOT deploy them; the systemd unit places them at
   the canonical paths on install)
 - `docs/components/tmp-watcher.md` — module map (`ioc` /
-  `allowlist`)
+  `allowlist` / `learn`)
 - `ARCHITECTURE.md` § Failure modes — "IOC list missing",
   "Allowlist missing"
+
+## File: `/etc/tmp-watcher.proposed.iocs` — Candidate IOC list
+
+The detection daemon auto-observes `Decision::Unknown` events
+and writes candidate-IOC entries to a **separate** file. The
+live `/etc/tmp-watcher.iocs` is never mutated by the detection
+daemon; the operator reviews the proposal file and runs the
+forthcoming `tmp-watcher-promote` CLI to move selected entries
+to the live IOC list. Per `ARCHITECTURE.md` invariant 7
+(reversible quarantine) and `ORIGIN.md` "Auto-fix actions"
+(no auto-add to allowlist), this is the only auto-write surface
+the detection daemon has.
+
+### Format
+
+One entry per line, four whitespace-separated fields:
+
+```
+<UTC-ISO>  <sha256-or-dash>  <basename>  <first-seen-path>
+```
+
+- `<UTC-ISO>` — RFC3339 / ISO8601 in UTC, e.g.
+  `2026-08-12T18:30:00Z`.
+- `<sha256-or-dash>` — lowercase 64-char hex SHA-256 of the
+  first entry file under the candidate dotdir; the literal
+  `-` (single hyphen) when the candidate has no entry files
+  (basename-only proposal).
+- `<basename>` — the dotdir basename (the candidate path's
+  last component).
+- `<first-seen-path>` — the directory path where the
+  candidate dotdir was observed (operator-facing context).
+
+Example:
+
+```
+2026-08-12T18:30:00Z  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  .r.rpk  /tmp/.r.rpk
+2026-08-12T18:30:00Z  -  .weird-xdg  /tmp/.weird-xdg
+```
+
+### Loader semantics (proposer writer)
+
+- The detection daemon is the **only writer** of this file.
+  The live IOC list is mutated only by the operator-side
+  `tmp-watcher-promote` CLI tool (separate scope, future
+  follow-up).
+- The file is **append-only** within one rotation cycle. The
+  writer does NOT rewrite existing lines; it only appends new
+  candidate entries.
+- The writer is **lock-free single-writer** (the detection
+  daemon). If a second writer ever appears, the writer MUST
+  add an `flock(LOCK_EX)` per `Issues/open/scout/briefs/SC-RUST-007`.
+
+### Dedup semantics
+
+- The proposer maintains a `HashSet<(basename, sha256)>`
+  cache for the lifetime of the writer.
+- The same `(basename, sha256)` pair observed twice within
+  the writer's lifetime does NOT produce a second entry — the
+  second call returns `ProposalAction::Duplicate` and is a
+  no-op on the file.
+- Across writer restarts, the cache is reconstructed from the
+  file content at writer startup: a `(basename, sha256)` pair
+  that is already on disk is treated as a duplicate.
+- After a rotation, the cache is cleared: the rotated file
+  remains in `/var/log/tmp-watcher/`, and the new empty file
+  is the new dedupe scope.
+
+### Retention policy
+
+- The file is rotated at **10 MB or 30 days**, whichever
+  comes first.
+- On rotation, the live file is moved to
+  `/var/log/tmp-watcher/proposed-rotate-<UTC>.iocs` (where
+  `<UTC>` is the Unix epoch seconds at rotation time).
+- The live file is recreated empty after rotation.
+- The `/var/log/tmp-watcher/` directory MUST exist and be
+  writable by the daemon; the systemd unit is responsible
+  for creating it at install time. Rotation failures are
+  logged at CRITICAL (`priority = 2`) and the live file is
+  kept as-is (the append proceeds against the existing file).
+
+### Failure handling
+
+- A writer error during `proposer.observe` is logged at
+  CRITICAL (`priority = 2`) via `tracing::error!` with the
+  basename and the error message. The detection daemon does
+  NOT abort the poll cycle on a proposer error; the next
+  poll cycle retries.
+- The detection daemon does NOT touch
+  `/etc/tmp-watcher.iocs` (the live IOC list) in any branch
+  of `Proposer::*`.

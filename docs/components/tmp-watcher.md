@@ -42,6 +42,7 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 |---|---|---|---|
 | Configuration | daemon args + env overlay | YAML | `config/default.yaml` (default) or arg `<CONFIG_PATH>` |
 | IOC list | operator-curated file (optional at first start) | one SHA-256 per line; baseline empty matcher when missing or comments-only | `/etc/tmp-watcher.iocs` |
+| Proposed IOC list | detection daemon writes; operator reads | `<UTC-ISO>  <sha256-or-dash>  <basename>  <first-seen-path>` (one per line; append-only; rotation 10 MB / 30 days) | `/etc/tmp-watcher.proposed.iocs` (rotated to `/var/log/tmp-watcher/proposed-rotate-<UTC>.iocs`) |
 | Allowlist | operator-curated file | one glob per line | `/etc/tmp-watcher.allowlist` |
 | Scan roots | config | list of paths | `/tmp`, `/home`, `/var/tmp` (defaults) |
 | Forensic archive (optional) | operator-mounted read-only | tar.gz | operator-supplied path (per-host) |
@@ -67,6 +68,7 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | `subsystem` | `src/subsystem.rs` | Walk + hash + match + quarantine | `ORIGIN.md` § "What it does" |
 | `ioc` | `src/ioc.rs` | IOC list loader + SHA-256 matcher | `ORIGIN.md` § "IOC list" |
 | `allowlist` | `src/allowlist.rs` | Glob-based allowlist filter | `ORIGIN.md` § "Allowlist" |
+| `learn` | `src/learn.rs` | `Decision::Unknown` observer; writes candidate IOCs to `/etc/tmp-watcher.proposed.iocs` (rotation 10 MB / 30 days) | `docs/contracts/tmp-watcher-allowlist-ioc.md` § "File: `/etc/tmp-watcher.proposed.iocs`" |
 | `output` | `src/output.rs` | Journal tags + NTFY push + audit reports | `RUNBOOK.md` § "Audit notes" |
 | (test) | `tests/smoke.rs` | `--help` + `--validate-config` + invalid-config fast-fail | `README.md` |
 

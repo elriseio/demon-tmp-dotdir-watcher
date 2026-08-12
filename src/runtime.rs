@@ -15,7 +15,7 @@
 
 #![allow(dead_code)]
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -26,6 +26,7 @@ use tracing::{error, info, warn};
 use crate::allowlist::Allowlist;
 use crate::config::Config;
 use crate::ioc::Matcher;
+use crate::learn::Proposer;
 use crate::output;
 use crate::subsystem::{self, Decision, QuarantineOutcome};
 
@@ -45,6 +46,7 @@ pub struct Runtime {
     cfg: Config,
     matcher: Matcher,
     allowlist: Allowlist,
+    proposer: Proposer,
     shutdown_rx: watch::Receiver<bool>,
 }
 
@@ -80,10 +82,18 @@ impl Runtime {
         };
         let allowlist = Allowlist::load(&cfg.allowlist.allowlist)
             .context("load allowlist")?;
+        let proposer_path = cfg
+            .ioc
+            .proposed_iocs
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("/etc/tmp-watcher.proposed.iocs"));
+        let proposer = Proposer::new(&proposer_path)
+            .context("init proposal file at runtime startup")?;
         Ok(Self {
             cfg,
             matcher,
             allowlist,
+            proposer,
             shutdown_rx,
         })
     }
@@ -98,7 +108,7 @@ impl Runtime {
     ///   4. emit journal events
     ///   5. (NTFY push is wired but a no-op until `Config` learns
     ///      a `ntfy_url` field; see implementation notes below.)
-    pub async fn run_once(&self) -> Result<RunSummary> {
+    pub async fn run_once(&mut self) -> Result<RunSummary> {
         let candidates = subsystem::walk(&self.cfg);
         let decisions = subsystem::walk_decision_pipeline(
             candidates,
@@ -175,6 +185,29 @@ impl Runtime {
                     summary.unknown += 1;
                     if self.cfg.actions.alert_on_unknown {
                         output::emit_unknown(basename, &c.path);
+                    }
+                    // Per the IOC-list baseline semantics, the
+                    // propser observes each Unknown event and appends
+                    // a candidate-IOC entry to the proposal file.
+                    // The first entry's SHA-256 is recorded if the
+                    // candidate has files; otherwise the basename-
+                    // only proposal uses an empty sha256.
+                    let sha_for_proposer = c
+                        .entries
+                        .first()
+                        .and_then(|entry| crate::ioc::hash_file(entry).ok())
+                        .unwrap_or_default();
+                    if let Err(e) =
+                        self.proposer
+                            .observe(basename, &sha_for_proposer, &c.path)
+                    {
+                        error!(
+                            target: "tmp-watcher",
+                            priority = 2,
+                            basename = basename,
+                            error = %e,
+                            "runtime: proposer.observe failed",
+                        );
                     }
                 }
             }
@@ -282,6 +315,7 @@ mod tests {
         let ioc_hash = hash_file(&dot.join("trunk.bin")).expect("hash payload");
 
         let ioc_list = TempFile::with_content("runtime_ioc_list", ioc_hash.as_bytes());
+        let proposal = TempFile::with_content("runtime_proposer", b"");
 
         let cfg = Config {
             log: LogConfig {
@@ -298,6 +332,7 @@ mod tests {
             ioc: IocConfig {
                 ioc_list: ioc_list.path().to_path_buf(),
                 ioc_archive_ref: None,
+                proposed_iocs: Some(proposal.path().to_path_buf()),
             },
             allowlist: AllowlistConfig {
                 allowlist: PathBuf::from("/dev/null"),
@@ -310,7 +345,7 @@ mod tests {
         };
 
         let (_tx, shutdown_rx) = watch::channel(false);
-        let runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
         let summary = runtime.run_once().await.expect("run_once");
 
         assert_eq!(summary.candidates, 1, "expected 1 candidate");
@@ -330,7 +365,11 @@ mod tests {
         );
     }
 
-    fn build_cfg_with_ioc_list(scan_root: PathBuf, ioc_list: PathBuf) -> Config {
+    fn build_cfg_with_proposer(
+        scan_root: PathBuf,
+        ioc_list: PathBuf,
+        proposer_path: PathBuf,
+    ) -> Config {
         Config {
             log: LogConfig {
                 level: "info".to_string(),
@@ -346,6 +385,7 @@ mod tests {
             ioc: IocConfig {
                 ioc_list,
                 ioc_archive_ref: None,
+                proposed_iocs: Some(proposer_path),
             },
             allowlist: AllowlistConfig {
                 allowlist: PathBuf::from("/dev/null"),
@@ -362,7 +402,8 @@ mod tests {
     fn runtime_new_with_missing_ioc_list_uses_empty_matcher() {
         let tmp = TempDir::new("missing_ioc_list");
         let bogus = tmp.path().join("does_not_exist.iocs");
-        let cfg = build_cfg_with_ioc_list(tmp.path().to_path_buf(), bogus);
+        let proposer = tmp.path().join("proposed.iocs");
+        let cfg = build_cfg_with_proposer(tmp.path().to_path_buf(), bogus, proposer);
 
         let (_tx, shutdown_rx) = watch::channel(false);
         let runtime = Runtime::new(cfg, shutdown_rx)
@@ -384,7 +425,8 @@ mod tests {
             b"# only comments and blank lines\n\n# nothing here\n",
         )
         .expect("write comments-only IOC list");
-        let cfg = build_cfg_with_ioc_list(tmp.path().to_path_buf(), ioc_list);
+        let proposer = tmp.path().join("proposed.iocs");
+        let cfg = build_cfg_with_proposer(tmp.path().to_path_buf(), ioc_list, proposer);
 
         let (_tx, shutdown_rx) = watch::channel(false);
         let runtime = Runtime::new(cfg, shutdown_rx)
@@ -407,7 +449,8 @@ mod tests {
         let ioc_list = root.join("populated.iocs");
         fs::write(&ioc_list, format!("{hash}  sample.bin\n").as_bytes())
             .expect("write populated IOC list");
-        let cfg = build_cfg_with_ioc_list(root.to_path_buf(), ioc_list);
+        let proposer = root.join("proposed.iocs");
+        let cfg = build_cfg_with_proposer(root.to_path_buf(), ioc_list, proposer);
 
         let (_tx, shutdown_rx) = watch::channel(false);
         let runtime = Runtime::new(cfg, shutdown_rx)
@@ -415,5 +458,46 @@ mod tests {
 
         assert_eq!(runtime.matcher.len(), 1);
         assert!(runtime.matcher.contains(&hash));
+    }
+
+    #[tokio::test]
+    async fn run_once_unknown_arm_writes_proposal_entry() {
+        // A non-allowlisted non-IOC dotdir lands on Decision::Unknown;
+        // the proposer must observe the event and append a candidate
+        // entry to the proposal file.
+        let tmp = TempDir::new("proposer_observation");
+        let root = tmp.path();
+
+        let dot = root.join(".unknown-target");
+        fs::create_dir_all(&dot).expect("create dotdir");
+        let payload: &[u8] = b"plain hello, not an IOC\n";
+        fs::write(dot.join("a.txt"), payload).expect("write payload");
+
+        let hash = hash_file(&dot.join("a.txt")).expect("hash payload");
+        let ioc_list = TempFile::with_content("unknown_ioc_list", b"# empty\n");
+        let proposer = tmp.path().join("proposed.iocs");
+
+        let cfg = build_cfg_with_proposer(
+            root.to_path_buf(),
+            ioc_list.path().to_path_buf(),
+            proposer.clone(),
+        );
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let summary = runtime.run_once().await.expect("run_once");
+
+        assert_eq!(summary.candidates, 1);
+        assert_eq!(summary.unknown, 1);
+
+        let content = fs::read_to_string(&proposer).expect("read proposal");
+        assert!(
+            content.contains(".unknown-target"),
+            "expected basename in proposal, got: {content}"
+        );
+        assert!(
+            content.contains(&hash),
+            "expected sha256 in proposal, got: {content}"
+        );
+        assert!(content.contains("/.unknown-target/a.txt") || content.contains(&dot.display().to_string()));
     }
 }

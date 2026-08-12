@@ -327,6 +327,7 @@ mod tests {
             ioc: IocConfig {
                 ioc_list: PathBuf::from("/dev/null"),
                 ioc_archive_ref: None,
+                proposed_iocs: None,
             },
             allowlist: AllowlistConfig {
                 allowlist: PathBuf::from("/dev/null"),

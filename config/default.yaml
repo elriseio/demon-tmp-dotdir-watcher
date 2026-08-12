@@ -13,6 +13,7 @@ paths:
 
 ioc:
   ioc_list: "/etc/tmp-watcher.iocs"
+  proposed_iocs: "/etc/tmp-watcher.proposed.iocs"
 
 allowlist:
   allowlist: "/etc/tmp-watcher.allowlist"
