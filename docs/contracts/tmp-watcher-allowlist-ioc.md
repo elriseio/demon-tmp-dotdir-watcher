@@ -151,9 +151,127 @@ systemd-private-*
   daemon does NOT deploy them; the systemd unit places them at
   the canonical paths on install)
 - `docs/components/tmp-watcher.md` — module map (`ioc` /
-  `allowlist` / `learn`)
+  `allowlist` / `learn` / `cross_host`)
 - `ARCHITECTURE.md` § Failure modes — "IOC list missing",
   "Allowlist missing"
+
+## Cross-host sink contract (AR-014)
+
+The cross-host correlation sidecar
+(`demon-tmp-watcher-cross-host`) is a separate daemon that
+reads per-host observation streams and aggregates them into
+the same `/etc/tmp-watcher.proposed.iocs` file the detection
+daemon writes. The aggregation is performed by the
+`Aggregator` in `src/cross_host.rs`, which is generic over the
+`Sink` trait.
+
+### `Sink` trait
+
+```rust
+#[async_trait]
+pub trait Sink: Send + Sync {
+    async fn fetch_observations(&self, since: SystemTime) -> Result<Vec<Observation>>;
+    async fn send_proposal(&self, proposal: ProposalEntry) -> Result<()>;
+}
+```
+
+### `Observation` shape
+
+```rust
+pub struct Observation {
+    pub host_id: String,
+    pub ts: SystemTime,
+    pub basename: String,
+    pub sha256: Option<String>,  // None for basename-only proposals
+    pub origin_path: PathBuf,
+}
+```
+
+### `ProposalEntry` shape
+
+```rust
+pub struct ProposalEntry {
+    pub host_id: String,
+    pub ts: SystemTime,
+    pub basename: String,
+    pub sha256: Option<String>,
+    pub origin_path: PathBuf,
+    pub cross_host_count: u64,
+}
+```
+
+### `Aggregator<S: Sink>` behaviour
+
+- `poll_once()` fetches observations from `Sink`, groups them by
+  `(basename, sha256)`, and writes one proposal entry per unique
+  key per poll cycle. The entry's `cross_host_count` is the
+  total number of unique host_ids seen for that key across the
+  Aggregator's lifetime plus the current batch.
+- The dedup semantic per poll cycle: the first observation of a
+  `(basename, sha256)` writes the entry; subsequent observations
+  of the same key in the same batch are counted as `deduped`
+  and do not produce additional entries.
+- The Aggregator's dedup state is reconstructed from the
+  existing proposal file at construction time (the `count` is
+  preserved; the actual host_ids are not — the Aggregator uses
+  placeholder host_ids so the count is honoured across restarts
+  even when the second observation arrives from a new host).
+- The Aggregator writes directly to `/etc/tmp-watcher.proposed.iocs`
+  via `std::fs`; the `Sink::send_proposal` method is the
+  round-trip capability for the sidecar binary to publish
+  aggregated entries back to the cross-host sink (e.g., a
+  shared endpoint on `iton-nest`). The detection daemon does NOT
+  call `Sink::send_proposal`.
+
+### Concrete Sink implementations
+
+The cross-host sidecar ships with a `NullSink` placeholder that
+returns empty observations. The operator chooses a concrete
+`Sink` implementation based on AR-014's open questions:
+
+- HTTP POST to a shared endpoint on `iton-nest`
+- File drop on a shared filesystem
+- Syslog relay
+- Unix-domain socket (loopback only)
+
+The transport MUST be loopback-only per
+`ARCHITECTURE.md` § "Boundaries" (the `Sink` implementation MUST
+NOT open outbound connections to non-loopback addresses).
+
+### Retention policy
+
+The Aggregator writes to the proposal file with the same
+10 MB / 30 days retention policy as the per-host detection
+daemon's `Proposer` (AR-013). The file is the same
+`/etc/tmp-watcher.proposed.iocs`; both writers honor the same
+retention contract.
+
+### Failure handling
+
+- An observer write error logs CRITICAL with `priority = 2`
+  (consistent with the per-host `Proposer` failure handling).
+- The detection daemon's `Decision::Unknown` arm does NOT call
+  `Sink::send_proposal`; the Aggregator only writes the proposal
+  file directly via `std::fs`.
+
+### Cross-host write format
+
+The Aggregator appends one line per `(basename, sha256)` per
+poll cycle:
+
+```
+<UTC-ISO>  <sha256-or-dash>  <basename>  <origin_path>  cross_host_count=N
+```
+
+Example:
+
+```
+2026-08-12T18:30:00Z  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  .r.rpk  /tmp/.r.rpk  cross_host_count=3
+```
+
+The detection daemon's entries (AR-013) do NOT carry the
+`cross_host_count=` suffix; absence means `cross_host_count=1`
+(single-host observation).
 
 ## File: `/etc/tmp-watcher.proposed.iocs` — Candidate IOC list
 

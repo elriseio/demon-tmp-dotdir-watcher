@@ -73,11 +73,24 @@ fn dry_run_succeeds_and_prints_dry_run_to_stderr() {
     // wires the full Decision pipeline + output::emit_* calls;
     // here we only need the operator-visible walk summary to
     // confirm config + scan_roots coverage.
+    //
+    // AR-013: The Proposer opens `/etc/tmp-watcher.proposed.iocs`
+    // at startup; CI containers lack write access to /etc, so the
+    // test rewrites the env override to a writable tempdir.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let tmp = std::env::temp_dir().join(format!("demon_smoke_dryrun_{nanos}"));
+    std::fs::create_dir_all(&tmp).expect("create tempdir");
+    let proposal_path = tmp.join("proposed.iocs").display().to_string();
     Command::cargo_bin(BIN)
         .unwrap()
         .arg("--dry-run")
+        .env("DEMON_IOC__PROPOSED_IOCS", &proposal_path)
         .timeout(Duration::from_secs(10))
         .assert()
         .success()
         .stderr(predicate::str::contains("dry-run"));
+    let _ = std::fs::remove_dir_all(&tmp);
 }

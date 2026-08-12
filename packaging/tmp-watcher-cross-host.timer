@@ -1,0 +1,13 @@
+[Unit]
+Description=Run tmp-watcher cross-host sidecar hourly
+Documentation=docs/adr/0001-tmp-watcher-learning-model.md
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=1h
+AccuracySec=1min
+Persistent=true
+Unit=tmp-watcher-cross-host.service
+
+[Install]
+WantedBy=timers.target

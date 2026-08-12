@@ -1,0 +1,24 @@
+[Unit]
+Description=tmp-watcher cross-host IOC correlation (AR-014)
+Documentation=docs/adr/0001-tmp-watcher-learning-model.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/demon-tmp-watcher-cross-host
+Environment=DEMON_LOG_LEVEL=info
+Environment=DEMON_CROSS_HOST_PROPOSED_IOCS=/etc/tmp-watcher.proposed.iocs
+StandardOutput=journal
+StandardError=journal
+Nice=10
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/tmp-watcher /etc/tmp-watcher
+NoNewPrivileges=true
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

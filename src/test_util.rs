@@ -1,4 +1,5 @@
 #![cfg(test)]
+#![allow(dead_code)]
 
 // Shared TempDir / TempFile RAII types for tests in ioc.rs and
 // subsystem.rs. Both modules previously copy-pasted the same

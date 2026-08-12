@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1"
+async-trait = "0.1"
 globset = "0.4"
 reqwest = "0.12"
 serde = { version = "1", features = ["derive"] }
@@ -16,6 +17,14 @@ sha2 = "0.10"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+[[bin]]
+name = "demon-tmp-dotdir-watcher"
+path = "src/main.rs"
+
+[[bin]]
+name = "demon-tmp-watcher-cross-host"
+path = "src/bin/demon-tmp-watcher-cross-host.rs"
 
 [dev-dependencies]
 assert_cmd = "2"

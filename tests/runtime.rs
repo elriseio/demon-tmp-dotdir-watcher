@@ -32,6 +32,7 @@ fn sigterm_yields_clean_shutdown() {
         // quotes don't have to be escape-mangled through a raw
         // string literal.
         let scan_root = tmp.display().to_string();
+        let proposal_path = tmp.join("proposed.iocs").display().to_string();
         let yaml_lines = [
             "log:",
             "  level: info",
@@ -43,7 +44,7 @@ fn sigterm_yields_clean_shutdown() {
             "  scan_window_minutes: 1440",
             "ioc:",
             "  ioc_list: \"/dev/null\"",
-            "  ioc_archive_ref: null",
+            &format!("  proposed_iocs: \"{proposal_path}\""),
             "allowlist:",
             "  allowlist: \"/dev/null\"",
             "  max_files_per_dir: 10",

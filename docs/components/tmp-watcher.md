@@ -69,6 +69,7 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | `ioc` | `src/ioc.rs` | IOC list loader + SHA-256 matcher | `ORIGIN.md` § "IOC list" |
 | `allowlist` | `src/allowlist.rs` | Glob-based allowlist filter | `ORIGIN.md` § "Allowlist" |
 | `learn` | `src/learn.rs` | `Decision::Unknown` observer; writes candidate IOCs to `/etc/tmp-watcher.proposed.iocs` (rotation 10 MB / 30 days) | `docs/contracts/tmp-watcher-allowlist-ioc.md` § "File: `/etc/tmp-watcher.proposed.iocs`" |
+| `cross_host` | `src/cross_host.rs` | Cross-host IOC correlation: `Sink` trait + `Aggregator` aggregating per-host observations into the proposal file with `cross_host_count=N` suffix | `docs/contracts/tmp-watcher-allowlist-ioc.md` § "Cross-host sink contract" |
 | `output` | `src/output.rs` | Journal tags + NTFY push + audit reports | `RUNBOOK.md` § "Audit notes" |
 | (test) | `tests/smoke.rs` | `--help` + `--validate-config` + invalid-config fast-fail | `README.md` |
 
