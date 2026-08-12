@@ -106,11 +106,8 @@ impl Runtime {
         };
 
         for (c, d) in &decisions {
-            // `subsystem::walk_decision_pipeline` already
-            // computes the basename once for `allowlist.allows`;
-            // we recompute it here from `c.path` rather than
-            // carrying a parallel Vec<String>, per SC-RUST-005
-            // § "do not duplicate paths in two data shapes".
+            // basename is recomputed from c.path; the pipeline
+            // derives it once for allowlist.allows.
             let basename = c
                 .path
                 .file_name()
