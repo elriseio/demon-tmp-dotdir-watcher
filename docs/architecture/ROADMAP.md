@@ -50,6 +50,38 @@ Acceptance for the wave as a whole:
 
 ## Planned waves
 
+### `wave-learning-baseline-005` (active after wave-001 + AR-009 close)
+
+Codify the empty/missing IOC list as a first-class bootstrap
+state and ship the first three learning tasks from the AR-012
+decomposition. Driver: operator directive 2026-08-12 — "при
+первом старте /etc/tmp-watcher.iocs пустой или может вообще
+отсутствовать". Foundation task AR-015 first (no deps), then
+AR-013, then AR-014.
+
+| Task | Title | Layer | Commit count | Depends on |
+|---|---|---|---|---|
+| AR-015 | Empty/missing IOC list as bootstrap baseline + contract update | `src/runtime.rs` + `docs/contracts/tmp-watcher-allowlist-ioc.md` | 1 | — |
+| AR-013 | Auto-promote `Decision::Unknown` → `/etc/tmp-watcher.proposed.iocs` | new `src/learn.rs` + contract extension | 1 | AR-015 |
+| AR-014 | Cross-host IOC correlation via separate sidecar | new `src/cross_host.rs` + new `demon-tmp-watcher-cross-host` binary + systemd unit | 1 | AR-013, AR-015 |
+
+Exit criteria for the wave as a whole:
+
+- `cargo build --release --bin demon-tmp-dotdir-watcher` succeeds
+  with zero warnings.
+- `cargo build --release --bin demon-tmp-watcher-cross-host`
+  succeeds with zero warnings (added by AR-014).
+- `cargo test` passes (smoke + per-component unit tests).
+- A fresh deployment with no `/etc/tmp-watcher.iocs` boots
+  without error and proceeds with `Matcher::empty()` baseline.
+- `Decision::Unknown` events accumulate in
+  `/etc/tmp-watcher.proposed.iocs` with deduplication and
+  rotation.
+- The cross-host sidecar (when enabled) writes aggregated
+  entries annotated with `cross_host_count=N`.
+- `tmp-watcher-promote` (separate CLI, future scope) is the
+  ONLY path that mutates `/etc/tmp-watcher.iocs`.
+
 ### `wave-shadow-cutover-002` (after wave-001 lands)
 
 Two-track safe cutover: keep the bash script active for one poll
@@ -95,13 +127,23 @@ host independently.
 
 ## Coordination notes
 
-- The active wave is **single-role**: only `developer` consumes
-  `Issues/open/developer/AR-*`. Architect monitors via
-  `memory.get_task_lineage_chain(project_slug,
+- The active wave (`wave-learning-baseline-005`) is
+  **single-role**: only `developer` consumes
+  `Issues/open/developer/AR-013`, `AR-014`, `AR-015`. Architect
+  monitors via `memory.get_task_lineage_chain(project_slug,
+  task_ref='<file>.md')` after each closure. Foundation-first
+  ordering: claim AR-015 → AR-013 → AR-014.
+- The wave-001 wave (already closed) was **single-role**: only
+  `developer` consumed `Issues/open/developer/AR-*`. Architect
+  monitored via `memory.get_task_lineage_chain(project_slug,
   task_ref='<file>.md')` after each closure.
 - Tests (cross-role handoff to `tester`) are out of scope for
   this wave — each task carries its own unit tests and the
-  smoke test (AR-007). A separate `wave-test-coverage-005` may
+  smoke test (AR-007). A separate `wave-test-coverage-006` may
   be added if live-host test gaps surface.
 - Operator approval required at the end of `wave-shadow-cutover-002`
   (cutover is the operator's call; not the daemon's).
+- Operator must answer the three open questions in AR-014 §
+  "Open questions for operator" before AR-014 lands:
+  per-host observation sink transport, host identity source,
+  whether the sidecar is enabled on day 1.

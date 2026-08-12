@@ -119,6 +119,39 @@ Architectural goal (current wave):
 
 ## Last Updated
 
+- 2026-08-12 — **Learning model decomposition accepted (AR-012 + ADR-0001 + AR-013/014/015).**
+  Operator approved the 3-task split for closing the three gaps
+  the operator flagged on "как именно демон учится":
+
+  1. **AR-015 (foundation, no deps)** — codify the
+     empty/missing `/etc/tmp-watcher.iocs` as a first-class
+     bootstrap state. Closes the docs↔code drift between
+     `docs/contracts/tmp-watcher-allowlist-ioc.md` (mandates
+     CRITICAL on missing) and `src/runtime.rs::Runtime::new`
+     (already degrades to `Matcher::empty` with WARN).
+  2. **AR-013 (depends on AR-015)** — auto-promote
+     `Decision::Unknown` events to
+     `/etc/tmp-watcher.proposed.iocs` (deduplicated, retention
+     10 MB or 30 days). Operator-side `tmp-watcher-promote`
+     is the only writer of the live IOC list.
+  3. **AR-014 (depends on AR-013 + AR-015)** — separate sidecar
+     binary `demon-tmp-watcher-cross-host` aggregates
+     observations across hosts (loopback-only per
+     ARCHITECTURE.md § "Boundaries") and writes to the same
+     proposal file annotated with `cross_host_count=N`.
+
+  Design record: `docs/adr/0001-tmp-watcher-learning-model.md`.
+  Umbrella: `Issues/open/developer/AR-012_define_learning_model.md`
+  (routing moved from `architect` → `developer` per operator
+  approval). New wave: `wave-learning-baseline-005` recorded in
+  `docs/architecture/ROADMAP.md`.
+
+  All three tasks MUST consult
+  `Issues/open/scout/briefs/SC-RUST-001..011` before writing
+  code; all three tasks MUST NOT embed task keys (AR-013,
+  AR-014, AR-015) inside `//` or `/* */` comments inside `.rs`
+  files.
+
 - 2026-08-12 — **AR-009 closed (Option A: docs-only reconciliation).**
   Resolved the docs-vs-code drift on two points:
 
