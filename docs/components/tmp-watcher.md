@@ -45,6 +45,10 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | Proposed IOC list | detection daemon writes; operator reads | `<UTC-ISO>  <sha256-or-dash>  <basename>  <first-seen-path>` (one per line; append-only; rotation 10 MB / 30 days) | `/etc/tmp-watcher.proposed.iocs` (rotated to `/var/log/tmp-watcher/proposed-rotate-<UTC>.iocs`) |
 | Allowlist | operator-curated file | one glob per line | `/etc/tmp-watcher.allowlist` |
 | Scan roots | config | list of paths | `/tmp`, `/home`, `/var/tmp` (defaults) |
+| Overlay scan roots | config | list of paths | `/var/lib/docker/overlay2` (default; v1: Docker `overlay2` only) |
+| Overlay scan flag | config | boolean | `paths.overlay_scanEnabled: true` (default); `false` disables overlay scan |
+| Overlay scan depth | config | integer | `paths.overlay_scan_maxdepth: 3` (default; per invariant 6) |
+| Overlay scan scope | config | boolean | `paths.overlay_scan_dotdir_only: true` (default; per operator direction 2026-08-13) |
 | Forensic archive (optional) | operator-mounted read-only | tar.gz | operator-supplied path (per-host) |
 | NTFY URL (optional) | env | URL string | `${NTFY_URL}` |
 
@@ -63,15 +67,16 @@ on unknown non-allowlisted dotdir, a WARNING is logged.
 | Module | File | Responsibility | Source of truth |
 |---|---|---|---|
 | `main` | `src/main.rs` | Boot, signal handling, top-level wiring | `ORIGIN.md` + `DAEMON.md` |
-| `config` | `src/config.rs` | Load + validate YAML config; env overlay | `config/default.yaml` |
+| `config` | `src/config.rs` | Load + validate YAML config; env overlay (host + overlay scan keys) | `config/default.yaml` |
 | `runtime` | `src/runtime.rs` | Main loop, shutdown coordination | `ARCHITECTURE.md` § "Subsystem" |
-| `subsystem` | `src/subsystem.rs` | Walk + hash + match + quarantine | `ORIGIN.md` § "What it does" |
+| `subsystem` | `src/subsystem.rs` | Walk + hash + match + quarantine (host scan + overlay scan via `overlay` module) | `ORIGIN.md` § "What it does" + `docs/adr/0002-container-overlay-scan.md` |
+| `overlay` | `src/overlay.rs` | Host-side overlay-fs walker for Docker `overlay2` layers; discovers layers, walks `tmp/.?*/` at depth ≤ 3, reuses IOC + allowlist matchers, applies `chmod 0o000` quarantine on overlay paths | `docs/adr/0002-container-overlay-scan.md` § "Decision" item 5 |
 | `ioc` | `src/ioc.rs` | IOC list loader + SHA-256 matcher | `ORIGIN.md` § "IOC list" |
 | `allowlist` | `src/allowlist.rs` | Glob-based allowlist filter | `ORIGIN.md` § "Allowlist" |
 | `learn` | `src/learn.rs` | `Decision::Unknown` observer; writes candidate IOCs to `/etc/tmp-watcher.proposed.iocs` (rotation 10 MB / 30 days) | `docs/contracts/tmp-watcher-allowlist-ioc.md` § "File: `/etc/tmp-watcher.proposed.iocs`" |
 | `cross_host` | `src/cross_host.rs` | Cross-host IOC correlation: `Sink` trait + `Aggregator` aggregating per-host observations into the proposal file with `cross_host_count=N` suffix | `docs/contracts/tmp-watcher-allowlist-ioc.md` § "Cross-host sink contract" |
 | `output` | `src/output.rs` | Journal tags + NTFY push + audit reports | `RUNBOOK.md` § "Audit notes" |
-| (test) | `tests/smoke.rs` | `--help` + `--validate-config` + invalid-config fast-fail | `README.md` |
+| (test) | `tests/smoke.rs` | `--help` + `--validate-config` + invalid-config fast-fail + overlay fixtures (10 tests) | `README.md` + `docs/adr/0002-container-overlay-scan.md` |
 
 ## Internal contracts
 
@@ -131,6 +136,10 @@ port; if they drift, the contract is right and the impl is wrong.
 | sha256sum on a 10+ file dotdir | file count > limit | abort that candidate; WARNING; continue |
 | find crossing a slow filesystem | timeout in walker | log WARNING; skip that subtree |
 | NTFY endpoint unreachable | curl error | log error; do not retry inside daemon (next poll) |
+| Overlay root absent (no Docker on host) | `metadata()` probe at startup | log INFO `overlay_scan_skipped reason=overlay_root_absent`; continue with host scan |
+| Overlay root unreadable | `read_dir()` Err | log WARNING; skip overlay scan for this poll cycle; continue with host scan |
+| Docker uses non-overlay2 driver (btrfs, zfs, vfs) | overlay root has no `<layer>/diff` subdirs | log INFO `overlay_scan_skipped reason=no_overlay2_layers`; continue |
+| `chmod 0o000` on overlay path fails | `Err(e)` from `std::fs::Permissions` | log CRITICAL; continue; `RUNBOOK.md` "Quarantine rollback (false positive)" instructions apply |
 
 ## Observability surface
 

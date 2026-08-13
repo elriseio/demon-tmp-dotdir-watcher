@@ -138,12 +138,98 @@ positive; the daemon has `chmod 000` the directory.
    ```bash
    sudo chmod 700 /tmp/<the-directory>
    ```
+   For overlay-resident matches (the container's overlay path), use
+   the path the daemon's CRITICAL journal line reports:
+   ```bash
+   sudo chmod 700 /var/lib/docker/overlay2/<layer-id>/diff/tmp/<the-directory>
+   ```
 2. Confirm the contents are legitimate with the operator.
 3. Add the directory name to `/etc/tmp-watcher.allowlist`.
 4. Restart the daemon or wait for the next poll cycle.
 5. The directory remains at mode `700` until the operator
    cleans it up; the daemon will not re-quarantine it once
    it is in the allowlist.
+
+### 5. WARNING: overlay scan skipped (no Docker on host)
+
+**Symptom:** journal line at INFO priority
+`overlay_scan_skipped reason=overlay_root_absent` at boot.
+
+**Triage:** expected on non-Docker hosts. The overlay scan is
+opt-in via `paths.overlay_scan_enabled`; set to `false` in
+`/etc/tmp-watcher.yaml` to silence the INFO log.
+
+**Escalation:** none — the host scan continues normally.
+
+### 6. WARNING: overlay root unreadable
+
+**Symptom:** journal line at WARNING priority
+`overlay_scan_skipped reason=overlay_root_unreadable` once per poll
+cycle. The host scan still runs; only the overlay scan is skipped.
+
+**Triage:**
+
+1. Verify the daemon has read access to the overlay root:
+   ```bash
+   ls -la /var/lib/docker/overlay2
+   sudo -u <daemon-user> ls /var/lib/docker/overlay2
+   ```
+2. On RHEL-derived Docker installs, the overlay root is root-owned
+   with mode 0o700 by default. Add the daemon's user to the
+   `docker` group, or run the daemon as root per the existing
+   systemd unit.
+3. If the daemon SHOULD run unprivileged, set:
+   ```yaml
+   paths:
+     overlay_scan_enabled: false
+   ```
+   in `/etc/tmp-watcher.yaml`. Host scan still catches the host-side
+   pattern; container-resident kits are missed (documented in
+   STATUS.md § "Risks" item 5).
+
+**Escalation:** if the overlay scan is required for compliance
+(no host without overlay coverage), add the daemon to the `docker`
+group on the affected host.
+
+### 7. INFO: overlay2 driver not detected
+
+**Symptom:** journal line at INFO priority
+`overlay_scan_skipped reason=no_overlay2_layers` at boot, then
+silence thereafter.
+
+**Triage:** Docker is using a storage driver other than `overlay2`
+(btrfs, zfs, vfs). The overlay scan gracefully skips. Future work
+will add support for the other drivers; v1 is Docker `overlay2` only.
+
+**Escalation:** none — host scan continues normally. If the host
+has a high-value container workload relying on overlay coverage,
+open a follow-up issue for the non-overlay2 driver.
+
+### 8. CRITICAL: overlay quarantine failed
+
+**Symptom:** journal line at CRITICAL priority
+`overlay_quarantine_failed path=<overlay-path> reason=<error>`.
+
+**Triage:** the daemon found an IOC match on an overlay path but
+could not apply `chmod 0o000`. The matched file is still active.
+
+1. Inspect the path manually:
+   ```bash
+   ls -la /var/lib/docker/overlay2/<layer>/diff/tmp/<matched-dir>
+   ```
+2. Apply the quarantine manually:
+   ```bash
+   sudo chmod 0 /var/lib/docker/overlay2/<layer>/diff/tmp/<matched-dir>
+   ```
+3. Stop the affected container per the operator playbook:
+   ```bash
+   docker stop <container-id>
+   ```
+4. Capture the journal lines for the incident (see § 1
+   "CRITICAL: IOC match" step 4) and follow the IOC-match incident
+   flow from step 5.
+
+**Escalation:** follow the CRITICAL IOC-match flow downstream.
 
 ## Restart policy
 

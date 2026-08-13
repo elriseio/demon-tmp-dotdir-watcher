@@ -104,11 +104,29 @@ Architectural goal (current wave):
    `/home/<user>/`. Mitigation: per-tree timeout in the scan walker
    (logged WARNING; skip subtree). See `RUNBOOK.md` failure-mode
    "find crossing a slow filesystem".
-2. **Encrypted droppers** — SHA-256 matcher only catches known
-   hashes; a new Azazel variant would not match. The daemon catches
-   the **footprint** (dot-dir pattern), not the binary. The
-   unknown-dotdir WARNING path is the backstop; it depends on the
-   allowlist staying curated.
+2. **Encrypted droppers + container-resident kits** — SHA-256 matcher
+   only catches known hashes; a new Azazel variant would not match.
+   The daemon catches the **footprint** (dot-dir pattern), not the
+   binary. The unknown-dotdir WARNING path is the backstop; it depends
+   on the allowlist staying curated. Two sub-bullets:
+   - **2a. Encrypted droppers** — closed by AR-013/014/015 (cross-host
+     learning: WARNING → proposed.iocs → curator review).
+   - **2b. Container-resident kits** — closed by **DE-006**
+     (`wave-container-overlay-006`): the daemon's host scan currently
+     walks `/tmp`, `/home`, `/var/tmp`. Docker overlay layers under
+     `/var/lib/docker/overlay2/<layer>/{diff,merged}/tmp/` are NOT seen
+     by `find /tmp` on the host. The 2026-08-09 `elrise-backend`
+     incident proves the gap (5-day persistence). DE-006 adds an
+     overlay-fs walker that reuses the existing IOC + allowlist
+     matchers and `chmod 0o000` quarantine. No `docker.sock`, no
+     privilege escalation. Scope is `.*` dot-directories only at depth
+     ≤ 3 (per operator direction 2026-08-13). Detection strategy is
+     **Strategy A** (comprehensive `.*` + three-stage filter:
+     IOC matcher → allowlist → unknown WARNING + proposed.iocs)
+     locked in `docs/adr/0002-container-overlay-scan.md` § "Decision"
+     item 0. Strategies B (name-snapshot denylist only) and C
+     (Strategy A + name-pattern classifier) are explicitly rejected
+     on 2026-08-13.
 3. **Cross-host IOC sync** — each host owns its own
    `/etc/tmp-watcher.iocs`. New IOCs from another host's incident
    must be propagated manually (see `ORIGIN.md` "Outstanding issues").
@@ -118,6 +136,86 @@ Architectural goal (current wave):
    fixed as part of `AR-007`.
 
 ## Last Updated
+
+## Last Updated
+
+- 2026-08-13 — **Container overlay scan completed (DE-006) + production deployment context (SA-003).**
+  Operator directive 2026-08-13 ("у этого демона есть одна проблема..
+  он сканирует систему, но не сканирует контейнеры docker" + "ответаы:
+  сканировать только .*") drove the architectural decision. The
+  2026-08-09 `elrise-backend` container compromise (Azazel-style kit
+  persisting 5 days inside `elrise-backend` while the host daemon
+  reported clean) is the in-scope incident. The fix is a host-side
+  overlay-fs walker against
+  `/var/lib/docker/overlay2/<layer>/{diff,merged}/tmp/.?*/` that
+  reuses the existing IOC + allowlist matchers and the `chmod 0o000`
+  quarantine. No `docker.sock`, no privilege escalation, no
+  destructive side effect. Scope is `.*` dot-directories only at
+  depth ≤ 3 (per operator direction). Implementation is the single
+  bounded developer task DE-006 (one commit, ≤ 5 files; new module
+  `src/overlay.rs` + thin extensions to subsystem/config).
+
+  **DE-006 closed** (per `Issues/done/developer/DE-006_implement_overlay_scan.md`):
+  82 tests pass (10 ADR-0002 § 9 tests + 9 cross-host + 7 smoke +
+  65 unit + 1 runtime); `cargo clippy --all-targets` clean; runtime
+  integration verified via `--dry-run` against an overlay fixture.
+
+  Detection strategy is **Strategy A** (comprehensive `.*` + three-stage
+  filter: IOC matcher → allowlist → unknown WARNING + proposed.iocs)
+  locked in `docs/adr/0002-container-overlay-scan.md` § "Decision"
+  item 0. Strategies B (name-snapshot denylist only) and C (Strategy A
+  + name-pattern classifier) are explicitly rejected on 2026-08-13.
+
+  **Production deployment context (2026-08-13, per
+  `Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md`):**
+  the daemon runs on tmp-vps with a minimal hardening-friendly
+  `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE
+  CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The upstream
+  `CapabilityBoundingSet=` (empty) recipe was identified as breaking
+  root readability of mode-0700 directories on 2026-08-13 and replaced.
+  Verification: `CapEff` = `000001ffffffffff` (post-fix); 2 candidates
+  per tick (`/home/deploy/.docker` and `/home/deploy/.ssh`).
+
+  **Cross-cutting constraint** added to ADR-0002 § "Constraints preserved":
+  "no new capability requirements." DE-006's overlay walker must work
+  with the existing `CAP_DAC_READ_SEARCH` capability (`std::fs::read_dir`
+  is sufficient). Any future feature requiring more is a separate ADR +
+  separate systemd unit diff.
+
+  Podman / containerd / CRI-O runtime support is explicitly out of scope
+  for v1 (Docker overlay2 only); config-driven extension is a
+  config-only change.
+
+  Risks item 2 is extended to split the "encrypted droppers / footprint
+  backbone" risk into two sub-bullets: (a) encrypted droppers (existing,
+  AR-013/014/015 cross-host path), (b) container overlay exposure (this
+  wave, DE-006). Compliance matrix adds overlay-scan invariants.
+
+- 2026-08-13 — **Container overlay scan accepted (AR-016 + ADR-0002 + DE-006).**
+  Operator directive 2026-08-13 ("у этого демона есть одна проблема..
+  он сканирует систему, но не сканирует контейнеры docker" + "ответаы:
+  сканировать только .*") drove the architectural decision. The
+  2026-08-09 `elrise-backend` container compromise (Azazel-style kit
+  persisting 5 days inside `elrise-backend` while the host daemon
+  reported clean) is the in-scope incident. The fix is a host-side
+  overlay-fs walker against
+  `/var/lib/docker/overlay2/<layer>/{diff,merged}/tmp/.?*/` that
+  reuses the existing IOC + allowlist matchers and the `chmod 0o000`
+  quarantine. No `docker.sock`, no privilege escalation, no
+  destructive side effect. Scope is `.*` dot-directories only at
+  depth ≤ 3 (per operator direction). Implementation is the single
+  bounded developer task DE-006 (one commit, ≤ 5 files; new module
+  `src/overlay.rs` + thin extensions to subsystem/config). New wave
+  `wave-container-overlay-006` recorded in `docs/architecture/ROADMAP.md`.
+
+  Risks item 2 is extended to split the "encrypted droppers / footprint
+  backbone" risk into two sub-bullets: (a) encrypted droppers (existing,
+  AR-013/014/015 cross-host path), (b) container overlay exposure (this
+  wave, DE-006). Compliance matrix adds overlay-scan invariants.
+
+  Podman / containerd / CRI-O runtime support is explicitly out of scope
+  for v1 (Docker overlay2 only); config-driven extension is a
+  config-only change.
 
 - 2026-08-12 — **Learning model decomposition accepted (AR-012 + ADR-0001 + AR-013/014/015).**
   Operator approved the 3-task split for closing the three gaps

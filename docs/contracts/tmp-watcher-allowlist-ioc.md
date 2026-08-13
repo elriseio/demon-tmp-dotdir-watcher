@@ -23,6 +23,81 @@ tags: [contract, tmp_watcher, ioc_list, allowlist, glob, sha256]
 > cadence, journal output schema (those live in
 > `docs/components/tmp-watcher.md` and `ARCHITECTURE.md`).
 
+## Overlay scan: filter semantics
+
+> **Note:** this section extends the contract for the
+> `wave-container-overlay-006` (Docker `overlay2` host-side scan) per
+> `docs/adr/0002-container-overlay-scan.md`. The IOC + allowlist
+> matching semantics in the rest of this contract are unchanged; the
+> overlay walker is a new scan root that uses the same matchers.
+
+### Scope
+
+The overlay scan walks Docker `overlay2` layer trees at
+`/var/lib/docker/overlay2/<layer-id>/{diff,merged}/tmp/.?*/`. The
+walker discovers layers (one or more per root), then walks each
+layer's `diff/` and `merged/` subdirectory's `tmp/` subtree.
+
+### Filter: `paths.overlay_scan_dotdir_only: true`
+
+The default filter is **dot-directories only**: the walker only
+descends into entries whose basename starts with `.`. This is
+per operator direction 2026-08-13 ("ответаы: сканировать только .*")
+and matches the host-side scan's detection fingerprint (shallow
+dot-directories).
+
+Examples that DO match: `.r.rpk/`, `.xdiag/`, `.apid`, `.perf.c/`,
+`.atmp/`, `.dotdir/`, `.tmp.{hex}/`.
+
+Examples that do NOT match (filtered out before hash): `sess_*`,
+`.X11-unix/`, `systemd-private-*/`, `.font-unix/`, `ssh-*`, etc.
+
+The filter is applied at the per-layer walker step, BEFORE the
+allowlist check, so the allowlist only sees candidates that
+already pass the dot-dir filter. The allowlist itself is unchanged.
+
+### Filter: `paths.overlay_scan_maxdepth: 3`
+
+The walker's depth cap is 3, matching the host-side scan
+(invariant 6). For an overlay path like
+`/var/lib/docker/overlay2/<layer>/diff/tmp/.r.rpk/seed/payload.bin`,
+the depth is 2 (counting `tmp` and `.r.rpk` as the first two
+levels; the walker's depth is the number of entries between the
+scan root and the candidate).
+
+### Filter: `paths.overlay_scan_enabled: true`
+
+The overlay scan is opt-in via the `overlay_scan_enabled` boolean.
+Default is `true` for new installs (containers are standard); an
+operator on a non-Docker host can disable it with `false`.
+
+### Matcher semantics (overlay)
+
+The overlay walker reuses `ioc::Matcher` and `allowlist::Allowlist`
+unchanged. The candidate path is the overlay path (where the host
+file actually lives), not the in-container path. The allowlist
+matches against the basename as the host sees it.
+
+Quarantine applies to the overlay path, not the in-container path.
+The kernel's overlay mode-bit propagation means a `chmod 0o000` on
+the overlay file shows up inside the container as the same
+0o000 mode — the container's process gets EACCES on read.
+
+### Failure modes
+
+See `docs/adr/0002-container-overlay-scan.md` § "Decision" item 8
+and `docs/components/tmp-watcher.md` § "Failure modes" for the
+exhaustive list. The contract-relevant consequence: the overlay
+scan is best-effort and NEVER aborts the daemon. Host scan is the
+always-on backbone.
+
+### Runtime support (v1)
+
+v1 implements Docker `overlay2` only. Podman / containerd / CRI-O
+use different overlay paths (see ADR-0002 § "Decision" item 3) and
+are future work. The config-driven `overlay_scan_roots` list
+allows adding additional roots without code change.
+
 ## File: `/etc/tmp-watcher.iocs` — IOC list
 
 ### Format
