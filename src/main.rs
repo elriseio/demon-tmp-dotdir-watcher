@@ -183,6 +183,7 @@ async fn main() -> Result<()> {
             unknown = summary.unknown,
             quarantined = summary.quarantined,
             skipped = summary.skipped,
+            unreadable_roots = summary.unreadable_roots.len(),
             "dry-run: tick summary",
         );
         return Ok(());

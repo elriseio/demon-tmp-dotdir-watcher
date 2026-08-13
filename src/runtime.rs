@@ -27,7 +27,7 @@ use crate::config::Config;
 use crate::ioc::Matcher;
 use crate::learn::Proposer;
 use crate::output;
-use crate::subsystem::{self, Decision, QuarantineOutcome};
+use crate::subsystem::{self, Decision, QuarantineOutcome, SkipReason};
 
 /// Per-tick counter. Plain-data; cheap to log and clone.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -38,6 +38,13 @@ pub struct RunSummary {
     pub unknown: usize,
     pub quarantined: usize,
     pub skipped: usize,
+    /// CR-006: paths of top-level `scan_root`s whose `read_dir()`
+    /// failed (EACCES on a `chmod 700` subtree, ENOENT on a
+    /// missing path, etc.). The walker now emits a synthetic
+    /// `Candidate { skipped_reason: Some(IoError) }` for each
+    /// unreadable root, and the runtime collects those paths
+    /// here so the per-poll summary log line surfaces them.
+    pub unreadable_roots: Vec<PathBuf>,
 }
 
 #[derive(Debug)]
@@ -143,6 +150,17 @@ impl Runtime {
             match d {
                 Decision::Skipped(reason) => {
                     summary.skipped += 1;
+                    // CR-006: a top-level `scan_root` whose
+                    // `read_dir` failed lands here as
+                    // `Skipped(IoError(_))` with `c.path == root`.
+                    // Record the path in `unreadable_roots` so the
+                    // operator's per-poll summary surfaces the
+                    // exact root(s) that disappeared from coverage.
+                    if let SkipReason::IoError(_) = reason {
+                        if self.cfg.paths.scan_roots.contains(&c.path) {
+                            summary.unreadable_roots.push(c.path.clone());
+                        }
+                    }
                     warn!(
                         target: "tmp-watcher",
                         priority = 4,
@@ -230,6 +248,7 @@ impl Runtime {
             unknown = summary.unknown,
             quarantined = summary.quarantined,
             skipped = summary.skipped,
+            unreadable_roots = summary.unreadable_roots.len(),
             "runtime: tick summary",
         );
 
@@ -510,5 +529,35 @@ mod tests {
             content.contains("/.unknown-target/a.txt")
                 || content.contains(&dot.display().to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn run_once_records_unreadable_scan_root() {
+        // CR-006 acceptance: when a `scan_root` cannot be read
+        // (operator-reported shape: `chmod 700 /home/<user>`),
+        // `RunSummary.unreadable_roots` MUST contain the path
+        // and `RunSummary.skipped` MUST increment, so the
+        // per-poll summary log line surfaces the loss of coverage.
+        let tmp = TempDir::new("cr006_unreadable_root");
+        let missing_root = tmp.path().join("does_not_exist");
+        let ioc_list = TempFile::with_content("cr006_ioc_list", b"# empty\n");
+        let proposer = tmp.path().join("proposed.iocs");
+        let cfg = build_cfg_with_proposer(
+            missing_root.clone(),
+            ioc_list.path().to_path_buf(),
+            proposer.clone(),
+        );
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let summary = runtime.run_once().await.expect("run_once");
+
+        assert_eq!(
+            summary.unreadable_roots.len(),
+            1,
+            "expected 1 unreadable root, got {:?}",
+            summary.unreadable_roots
+        );
+        assert_eq!(summary.unreadable_roots[0], missing_root);
+        assert_eq!(summary.skipped, 1, "Skipped(IoError) must bump skipped");
     }
 }

@@ -100,6 +100,7 @@ or transformation, side effect.
 | `/var/log/tmp-watcher.log` not writable | open() probe | log to journal only; continue |
 | sha256sum on a 10+ file dotdir | file count > limit | abort that candidate; WARNING; continue |
 | find crossing a slow filesystem | timeout in `find` | log WARNING; skip that subtree |
+| `scan_root` unreadable (EACCES on `chmod 700` subtree, ENOENT on missing path, etc.) | `std::fs::read_dir(root)` returns `Err` | CR-006: synthetic `Candidate { skipped_reason: Some(IoError) }`; `RunSummary.skipped` increments; `RunSummary.unreadable_roots` records the path; per-poll summary log line surfaces `unreadable_roots = N`; per-entry WARN stays |
 | NTFY endpoint unreachable | (not yet wired; runtime call site `output::ntfy_push(None, …)` is a no-op) | log error; do not retry inside daemon (next poll) — applies once `Config.ntfy_url` lands |
 
 ## Migration to Rust

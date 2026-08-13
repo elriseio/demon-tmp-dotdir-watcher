@@ -236,7 +236,22 @@ fn walk_recursive(
     let read = match std::fs::read_dir(dir) {
         Ok(r) => r,
         Err(e) => {
+            // CR-006: do NOT silently return. The walker has not
+            // seen any candidate under this root; the operator
+            // cannot distinguish "empty root" from "inaccessible
+            // root" without reading the journal. Emit a synthetic
+            // `Candidate { skipped_reason: Some(IoError) }` so the
+            // pipeline increments `summary.skipped` and the runtime
+            // surfaces the path via `summary.unreadable_roots` on
+            // the per-poll summary log line. The per-entry WARN
+            // stays as the low-level signal.
             warn!("subsystem: read_dir failed for {}: {e}", dir.display());
+            out.push(Candidate {
+                path: dir.to_path_buf(),
+                entries: Vec::new(),
+                skipped_reason: Some(SkipReason::IoError(format!("read_dir: {e}"))),
+                source: None,
+            });
             return;
         }
     };
@@ -464,14 +479,83 @@ mod tests {
 
     #[test]
     fn walk_handles_unreadable_scan_root() {
-        let cfg = make_config(
-            vec![PathBuf::from("/this/path/does/not/exist/subsystem_ar_002")],
-            3,
-            60,
-            10,
-        );
+        // CR-006: an unreadable `scan_root` (ENOENT, EACCES, or
+        // any other read_dir Err) MUST surface a synthetic
+        // Candidate with `skipped_reason: Some(SkipReason::IoError(_))`
+        // so the runtime's RunSummary.unreadable_roots picks it
+        // up. The previous contract (empty Vec) was the exact
+        // silent-False-Negative vector that CR-006 closes.
+        let bogus = PathBuf::from("/this/path/does/not/exist/subsystem_ar_002");
+        let cfg = make_config(vec![bogus.clone()], 3, 60, 10);
         let result = walk(&cfg);
-        assert!(result.is_empty());
+
+        assert_eq!(result.len(), 1, "expected 1 synthetic Candidate");
+        let c = &result[0];
+        assert_eq!(c.path, bogus);
+        assert!(c.entries.is_empty());
+        match &c.skipped_reason {
+            Some(SkipReason::IoError(msg)) => assert!(
+                msg.contains("read_dir"),
+                "expected read_dir error message, got {msg:?}"
+            ),
+            other => panic!("expected IoError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn walk_surfaces_unreadable_subtree() {
+        // CR-006: a readable `scan_root` containing a
+        // permission-denied subtree (the operator-reported
+        // `/home/deploy mode 700` shape) MUST surface a
+        // synthetic Candidate for the unreadable subtree. We
+        // use a missing intermediate path under a readable
+        // parent as a stable stand-in for `chmod 700` (the
+        // walker cannot tell the two apart at this layer; the
+        // contract is "read_dir failed on this directory").
+        let tmp = TempDir::new("cr006_unreadable_subtree");
+        let root = tmp.path();
+        fs::create_dir_all(root.join("readable")).expect("create readable");
+        fs::create_dir_all(root.join("unreadable/.staging")).expect("create unreadable dir");
+        // Drop the perms to make `read_dir` fail; CI as root
+        // still works because `read_dir` on a 0o000 dir is
+        // EACCES regardless of effective uid.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(
+                root.join("unreadable"),
+                fs::Permissions::from_mode(0o000),
+            );
+        }
+        let cfg = make_config(vec![root.to_path_buf()], 5, 60, 10);
+        let result = walk(&cfg);
+
+        // The walker may also descend into `readable` (no
+        // candidates under it), so we filter by path. The
+        // unreadable subtree MUST show up as a synthetic
+        // Skipped(IoError) Candidate.
+        let unreadable: Vec<&Candidate> = result
+            .iter()
+            .filter(|c| c.path.file_name().and_then(|s| s.to_str()) == Some("unreadable"))
+            .collect();
+        assert_eq!(
+            unreadable.len(),
+            1,
+            "expected 1 unreadable subtree candidate; got {result:?}"
+        );
+        match &unreadable[0].skipped_reason {
+            Some(SkipReason::IoError(_)) => {}
+            other => panic!("expected IoError, got {other:?}"),
+        }
+        // Best-effort restore for TempDir Drop.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(
+                root.join("unreadable"),
+                fs::Permissions::from_mode(0o755),
+            );
+        }
     }
 
     #[test]

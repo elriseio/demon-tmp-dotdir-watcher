@@ -333,6 +333,35 @@ sudo systemctl enable --now tmp-watcher.timer
 daemon is timer-driven and a hard restart loop on a persistent
 failure would burn CPU.
 
+> **Visibility caveat: `chmod 700 /home/<user>` interacts with
+> `CapabilityBoundingSet=` (CR-006).** The recommended hardening
+> (`ProtectHome=read-only`, `CapabilityBoundingSet=` empty) drops
+> all capabilities and grants the daemon only "others" access on
+> filesystem entities it does not own or have a group grant for.
+> On a host with `chmod 700 /home/<user>` directories, the daemon
+> cannot traverse those subtrees — the `/home` arm of the threat
+> model (Azazel's secondary footprint under `.docker`, `.ssh`,
+> `.cache`, `.rpk`, `.xdiag`, etc.) becomes invisible to the
+> walker. The daemon does NOT silently swallow this: each
+> unreadable scan root produces a synthetic
+> `Candidate { skipped_reason: Some(IoError) }`, increments
+> `RunSummary.skipped`, and surfaces the path via
+> `RunSummary.unreadable_roots` on the per-poll summary log line
+> (`journalctl -t tmp-watcher ... | grep unreadable_roots`).
+>
+> Operator remediation options:
+>
+> - **Remove `/home` from `scan_roots`** and rely on `/tmp` +
+>   overlay-scan arms. Accept the visibility loss.
+> - **Add the daemon user's gid to those homes' owning group**
+>   so `read_dir` succeeds on the directory execute bit.
+> - **Switch `ProtectHome=` to `false`** (drops the kernel
+>   protection that caused the EACCES) and re-evaluate the
+>   threat model trade-off.
+>
+> The daemon's default config keeps `/home` in `scan_roots`; the
+> choice is operator-facing and documented above.
+
 ## Logs and alerts
 
 | Where | What | Filter |
