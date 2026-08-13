@@ -43,11 +43,26 @@ This README is the on-ramp: build, install, run, monitor.
 
 The NTFY push side effect is wired through
 `runtime::push_ntfy_for_match`. In the current release that
-function calls `output::ntfy_push(None, …)`; the URL is not
-yet read from config, so the alert goes to the journal and the
-log file only. Wiring NTFY through `Config` is tracked
-separately; until that lands, plan operator paging off the
-journal tag `tmp-watcher`.
+function calls `output::ntfy_push(self.cfg.actions.ntfy_url
+.as_deref(), …)`; the URL is read from `actions.ntfy_url` in
+`Config` (default `None`, operator-supplied via env or
+`/etc/tmp-watcher.yaml`). When unset, the IOC-match alert goes
+to the journal and the log file only; when set, the per-tick
+summary is POSTed alongside. See
+[NTFY alert channel](#ntfy-alert-channel) below for the env
+override + config field + contract doc.
+
+**NTFY alert channel** — wired (since v0.2.0, DE-018..DE-022
+wave). Set `DEMON_ACTIONS__NTFY_URL=https://ntfy.sh/<topic>`
+or `actions.ntfy_url: "https://ntfy.sh/<topic>"` in
+`/etc/tmp-watcher.yaml`. After every tick the daemon POSTs
+the per-tick summary with NTFY headers (`Title`, `Priority`,
+`Tags`) and `text/plain` body per
+[`docs/contracts/webhook-payload.md`](docs/contracts/webhook-payload.md).
+Severity → priority mapping: info → 2, warn → 3, error → 5.
+A `tick_err = true` from `runtime.run_once` short-circuits to
+`Severity::Error` so the operator phone receives a priority-5
+alert when the daemon itself fails.
 
 The quarantine is reversible: `chmod 700 <path>` re-enables the
 directory. The daemon never deletes files. See `ARCHITECTURE.md`
@@ -182,6 +197,7 @@ use double-underscore (`__`) as the section separator:
 | `DEMON_ALLOWLIST__MAX_FILES_PER_DIR` | `allowlist.max_files_per_dir` (integer) |
 | `DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH` | `actions.quarantine_on_ioc_match` (bool) |
 | `DEMON_ACTIONS__ALERT_ON_UNKNOWN` | `actions.alert_on_unknown` (bool) |
+| `DEMON_ACTIONS__NTFY_URL` | `actions.ntfy_url` (URL string; per-tick summary emit) |
 
 An env override that fails to parse is logged at WARN and
 ignored; the YAML value (or the embedded default) is kept.
@@ -370,7 +386,7 @@ failure would burn CPU.
 | `journalctl -t tmp-watcher PRIORITY=2 -S -24h` | CRITICAL (IOC match) | last 24h |
 | `journalctl -t tmp-watcher PRIORITY=4 -S -24h` | WARNING (unknown dotdir) | last 24h |
 | `tail -F /var/log/tmp-watcher.log` | full event log with timestamps | host log |
-| NTFY push | wired through `runtime::push_ntfy_for_match`; currently noop until `Config.ntfy_url` lands — see *When it fires* above | operator phone (when wired) |
+| NTFY push (per-tick summary) | wired through `output::push_tick_summary` when `Config.actions.ntfy_url` is set; contract at `docs/contracts/webhook-payload.md` | operator phone (when configured) |
 
 The daemon uses `tracing-subscriber` with JSON output; each
 event carries `candidates`, `allowlisted`, `ioc_matches`,

@@ -37,12 +37,14 @@ include: symptom, triage steps, escalation path.)
 
 **Symptom:** `PRIORITY=2` journal line with
 "daemon: tmp-watcher | event: ioc_match | path: /tmp/.dotdir/...".
-The daemon has already `chmod 000` the matched directory. The NTFY
-push for operator phone alert is **planned, not wired** today
-(see `docs/architecture/STATUS.md`); if the journal is silent and
-the operator phone is silent, the IOC match may have been missed
-by the systemd-journal shipping path. Verify with
-`journalctl -t tmp-watcher PRIORITY=2 -S -1h`.
+The daemon has already `chmod 000` the matched directory. When
+`Config.actions.ntfy_url` is set, the runtime ALSO POSTs an
+NTFY summary at priority 5 (Severity::Error) per
+`docs/contracts/webhook-payload.md`; otherwise the alert goes
+to the journal only and the operator phone is silent unless
+journal shipping is wired separately. Verify IOC visibility
+with `journalctl -t tmp-watcher PRIORITY=2 -S -1h` regardless
+of NTFY configuration.
 
 **Triage:**
 
@@ -230,6 +232,46 @@ could not apply `chmod 0o000`. The matched file is still active.
    flow from step 5.
 
 **Escalation:** follow the CRITICAL IOC-match flow downstream.
+
+## Output channels
+
+### Webhook channel
+
+`tmp-watcher` POSTs a per-tick summary to `Config.actions.ntfy_url`
+after every poll cycle when the URL is set. The contract (request
+shape, headers, body, severity mapping, examples) is the canonical
+[`docs/contracts/webhook-payload.md`](docs/contracts/webhook-payload.md).
+
+**Severity → priority table** (per `output::Severity::from_run_summary`):
+
+| Severity | NTFY priority | When |
+|---|---|---|
+| `info` | 2 (default) | tick completed clean: `ioc_matches == quarantined`, no unreadable roots, no skipped, `candidates > 0` |
+| `warn` | 3 (high) | `unreadable_roots > 0` OR `skipped > 0` OR `candidates == 0` (no scan output — possible runtime regression) |
+| `error` | 5 (urgent) | quarantine partial failure (`ioc_matches > 0` AND `quarantined < ioc_matches`) OR `tick_err = true` (daemon-side `run_once` returned `Err`) |
+
+**Triage flow — "NTFY POST returns non-2xx":**
+
+1. The daemon logs `runtime: ntfy post-summary push failed` at
+   `priority = 4` WARNING with `error = …` (transport) or
+   `runtime: ntfy post-summary push returned non-2xx` with
+   `status = <code>, body = <text>`. Verify with
+   `journalctl -t tmp-watcher -p 4 -S -1h | grep ntfy`.
+2. The tick continues regardless: per ARCHITECTURE.md invariant 5
+   + the contract doc, webhook failure never blocks cycle
+   completion. The next tick retries.
+3. If failures persist, common operator-side fixes:
+   - Rotate the NTFY topic (`actions.ntfy_url`) if the upstream
+     topic was revoked or rate-limited.
+   - Verify `/etc/tmp-watcher.yaml` for typos in `actions.ntfy_url`
+     (the field accepts any string; no URL validation by design
+     per the contract doc).
+   - Check firewall egress for the daemon's outbound HTTPS —
+     `curl -v "$actions_ntfy_url" -d 'test'` from the daemon host
+     verifies reachability.
+4. If failures keep recurring with `status = 5xx`, check the
+   operator-side notification sink (NTFY service health,
+   authentication, rate-limit) and open an incident.
 
 ## Restart policy
 
