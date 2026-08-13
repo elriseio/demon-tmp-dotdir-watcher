@@ -273,10 +273,21 @@ memory when no timer is firing.
 
 ## Deployment (systemd)
 
-The daemon is timer-driven. The unit and timer are not shipped
-in this folder (they belong to the host's systemd catalog at
-`/etc/systemd/system/`). Drop in the following two files and
-enable the timer:
+The daemon is timer-driven. The stub unit + timer ship in
+`contrib/systemd/` (DE-018); install via `make install-units`
+(copies to `/etc/systemd/system/`) or copy them manually.
+
+```bash
+# One-shot install: build + ship binary, units, and a fresh
+# /etc/tmp-watcher.yaml if one is not already present. The
+# /etc/tmp-watcher.yaml copy is idempotent (preserves operator
+# edits on re-install). Per the daemon's "proposed" status, the
+# systemd units are installed but NOT enabled — first-deployment
+# enablement is operator-side.
+make install
+```
+
+The full manual layout (drop-in):
 
 `/etc/systemd/system/tmp-watcher.service`
 
@@ -439,16 +450,33 @@ demon-tmp-dotdir-watcher/
 ├── tests/
 │   ├── smoke.rs          # `--help` + `--validate-config` smoke
 │   └── runtime.rs        # walk + classify + quarantine e2e
+├── contrib/
+│   ├── config/
+│   │   └── tmp-watcher.yaml.example   # operator-facing example config (YAML)
+│   └── systemd/
+│       ├── tmp-watcher.service        # Type=oneshot stub per invariant 2
+│       └── tmp-watcher.timer          # OnUnitActiveSec=10min
 ├── docs/
 │   ├── components/tmp-watcher.md
-│   ├── contracts/tmp-watcher-allowlist-ioc.md
+│   ├── contracts/
+│   │   ├── tmp-watcher-allowlist-ioc.md
+│   │   └── webhook-payload.md         # NTFY post-tick summary contract (DE-021)
 │   ├── architecture/ROADMAP.md
 │   └── architecture/STATUS.md
 ├── ORIGIN.md             # canonical operator-facing description
 ├── DAEMON.md             # on-ramp summary for an architect
 ├── ARCHITECTURE.md       # component breakdown + invariants + failure modes
-├── RUNBOOK.md            # operator triage flow
+├── Makefile              # build / test / lint / install helpers (DE-018)
+├── RUNBOOK.md            # operator triage flow + Webhook channel triage
 └── README.md             # this file
+```
+
+> `contrib/` ships the operator-side artifacts (example config + stub
+> systemd units) per `Demon/docker-janitor` peer convention; the
+> `Makefile` targets `install-config` / `install-bin` / `install-units`
+> install them in one shot. `make enable` is intentionally NOT
+> defined — the daemon is operator-side activated per its
+> "proposed" status in [Current state](#current-state).
 ```
 
 ## Where to look next
