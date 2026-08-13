@@ -10,6 +10,16 @@ paths:
   scan_roots: ["/tmp", "/home", "/var/tmp"]
   scan_maxdepth: 3
   scan_window_minutes: 1440
+  #### Overlay-fs scan (ADR-0002): walks Docker overlay2 layers for
+  #### container-resident Azazel-style dot-directories. v1 covers
+  #### Docker overlay2 only; Podman / containerd / CRI-O are future
+  #### work tracked in `docs/architecture/STATUS.md`. Set
+  #### `overlay_scan.enabled: false` on hosts without Docker.
+  overlay_scan:
+    enabled: true
+    roots: ["/var/lib/docker/overlay2"]
+    maxdepth: 3
+    dotdir_only: true
 
 ioc:
   ioc_list: "/etc/tmp-watcher.iocs"

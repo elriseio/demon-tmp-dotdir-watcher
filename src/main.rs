@@ -15,6 +15,7 @@ mod config;
 mod ioc;
 mod learn;
 mod output;
+mod overlay;
 mod runtime;
 mod subsystem;
 
@@ -75,6 +76,10 @@ fn print_usage() {
            DEMON_PATHS__SCAN_MAXDEPTH\n\
            DEMON_PATHS__SCAN_WINDOW_MINUTES\n\
            DEMON_PATHS__SCAN_ROOTS (colon-separated)\n\
+           DEMON_PATHS__OVERLAY_SCAN_ENABLED\n\
+           DEMON_PATHS__OVERLAY_SCAN_ROOTS (colon-separated)\n\
+           DEMON_PATHS__OVERLAY_SCAN_MAXDEPTH\n\
+           DEMON_PATHS__OVERLAY_SCAN_DOTDIR_ONLY\n\
            DEMON_IOC__IOC_LIST\n\
            DEMON_IOC__IOC_ARCHIVE_REF\n\
            DEMON_ALLOWLIST__ALLOWLIST\n\

@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use assert_cmd::Command;
 use predicates::prelude::*;
@@ -78,7 +78,7 @@ fn dry_run_succeeds_and_prints_dry_run_to_stderr() {
     // at startup; CI containers lack write access to /etc, so the
     // test rewrites the env override to a writable tempdir.
     let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+        .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let tmp = std::env::temp_dir().join(format!("demon_smoke_dryrun_{nanos}"));
@@ -93,4 +93,48 @@ fn dry_run_succeeds_and_prints_dry_run_to_stderr() {
         .success()
         .stderr(predicate::str::contains("dry-run"));
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+// ADR-0002 § 9 test 8 (runtime-side): `--dry-run` against an
+// overlay fixture must complete without `chmod 0o000` on the
+// overlay path. `--dry-run` already forces
+// `actions.quarantine_on_ioc_match = false` in `main.rs`; this
+// test verifies the runtime path walks the overlay candidates
+// without mutating them. We also assert that `--dry-run` exits 0
+// and emits the dry-run tag so the operator sees coverage.
+#[test]
+fn dry_run_against_overlay_fixture_does_not_quarantine() {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let overlay_root = std::env::temp_dir().join(format!("demon_overlay_smoke_{nanos}"));
+    let layer_dir = overlay_root.join("smoke-layer");
+    let tmp_dot = layer_dir.join("diff").join("tmp").join(".r.rpk");
+    std::fs::create_dir_all(&tmp_dot).expect("create overlay fixture tmp/.r.rpk");
+    std::fs::write(tmp_dot.join("seed.txt"), b"smoke-fixture\n").expect("write seed");
+
+    let proposal_path = overlay_root.join("proposed.iocs");
+    Command::cargo_bin(BIN)
+        .unwrap()
+        .arg("--dry-run")
+        .env("DEMON_PATHS__SCAN_ROOTS", "/nope")
+        .env("DEMON_PATHS__OVERLAY_SCAN_ROOTS", overlay_root.display().to_string())
+        .env("DEMON_IOC__PROPOSED_IOCS", proposal_path.display().to_string())
+        .timeout(Duration::from_secs(10))
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("dry-run"));
+
+    // Verify the overlay fixture path is still readable; if
+    // dry-run had called chmod 0o000, this metadata() would still
+    // succeed on Linux (per subsystem::quarantine tests) but the
+    // directory listing would not. We assert the seed file is
+    // still present as a stronger end-to-end check.
+    let seed_still_present = tmp_dot.join("seed.txt").exists();
+    let _ = std::fs::remove_dir_all(&overlay_root);
+    assert!(
+        seed_still_present,
+        "dry-run must not delete or otherwise remove the overlay fixture",
+    );
 }

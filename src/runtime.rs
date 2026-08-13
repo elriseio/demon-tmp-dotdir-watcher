@@ -97,18 +97,37 @@ impl Runtime {
         })
     }
 
-    /// AR-008: one full poll pipeline. Returns a `RunSummary`
-    /// counter for logging and tests.
+    /// AR-008 + ADR-0002 § 1: one full poll pipeline. Returns a
+    /// `RunSummary` counter for logging and tests.
     ///
     /// The 5-step ordering per the issue scope:
-    ///   1. walk scan roots
+    ///   1. walk scan roots (host + overlay)
     ///   2. classify (allowlist + IOC match)
     ///   3. quarantine IOC matches
     ///   4. emit journal events
     ///   5. (NTFY push is wired but a no-op until `Config` learns
     ///      a `ntfy_url` field; see implementation notes below.)
     pub async fn run_once(&mut self) -> Result<RunSummary> {
-        let candidates = subsystem::walk(&self.cfg);
+        let mut candidates = subsystem::walk(&self.cfg);
+
+        // ADR-0002 § 1: the daemon's poll cycle walks both host
+        // scan roots and overlay scan roots in the same pass. The
+        // IOC + allowlist matchers are the same instance for both;
+        // the host-side `.font-unix` / `systemd-private-*` patterns
+        // apply to overlay candidates too. Overlay candidates
+        // carry the same `Candidate` shape with a tagged `source`
+        // field, so the existing `walk_decision_pipeline` consumes
+        // both uniformly.
+        if self.cfg.paths.overlay_scan.enabled {
+            let overlay_candidates = crate::overlay::walk_all_overlays(
+                &self.cfg.paths.overlay_scan.roots,
+                self.cfg.paths.overlay_scan.maxdepth,
+                self.cfg.paths.overlay_scan.dotdir_only,
+                &self.allowlist,
+            );
+            candidates.extend(overlay_candidates);
+        }
+
         let decisions =
             subsystem::walk_decision_pipeline(candidates, &self.matcher, &self.allowlist);
 
@@ -314,6 +333,7 @@ mod tests {
                 scan_roots: vec![root.to_path_buf()],
                 scan_maxdepth: 3,
                 scan_window_minutes: 60,
+                overlay_scan: crate::config::OverlayScanConfig::default(),
             },
             ioc: IocConfig {
                 ioc_list: ioc_list.path().to_path_buf(),
@@ -366,6 +386,7 @@ mod tests {
                 scan_roots: vec![scan_root],
                 scan_maxdepth: 3,
                 scan_window_minutes: 60,
+                overlay_scan: crate::config::OverlayScanConfig::default(),
             },
             ioc: IocConfig {
                 ioc_list,

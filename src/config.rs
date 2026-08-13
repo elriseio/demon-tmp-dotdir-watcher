@@ -43,6 +43,50 @@ pub struct PathsConfig {
     pub scan_roots: Vec<PathBuf>,
     pub scan_maxdepth: usize,
     pub scan_window_minutes: u32,
+    #[serde(default)]
+    pub overlay_scan: OverlayScanConfig,
+}
+
+// ADR-0002 § 4: host-side overlay-fs scan configuration. v1 covers
+// Docker overlay2 only; Podman / containerd / CRI-O are out of scope
+// and tracked as future work in `docs/architecture/STATUS.md`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OverlayScanConfig {
+    #[serde(default = "default_overlay_scan_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_overlay_scan_roots")]
+    pub roots: Vec<PathBuf>,
+    #[serde(default = "default_overlay_scan_maxdepth")]
+    pub maxdepth: usize,
+    #[serde(default = "default_overlay_scan_dotdir_only")]
+    pub dotdir_only: bool,
+}
+
+impl Default for OverlayScanConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_overlay_scan_enabled(),
+            roots: default_overlay_scan_roots(),
+            maxdepth: default_overlay_scan_maxdepth(),
+            dotdir_only: default_overlay_scan_dotdir_only(),
+        }
+    }
+}
+
+fn default_overlay_scan_enabled() -> bool {
+    true
+}
+
+fn default_overlay_scan_roots() -> Vec<PathBuf> {
+    vec![PathBuf::from("/var/lib/docker/overlay2")]
+}
+
+fn default_overlay_scan_maxdepth() -> usize {
+    3
+}
+
+fn default_overlay_scan_dotdir_only() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -67,6 +111,7 @@ pub struct ActionsConfig {
 
 const SCAN_MAXDEPTH_LIMIT: usize = 3;
 const MAX_FILES_PER_DIR_LIMIT: usize = 10;
+const OVERLAY_SCAN_MAXDEPTH_LIMIT: usize = 3;
 
 impl Config {
     pub fn validate(&self) -> Result<()> {
@@ -87,6 +132,23 @@ impl Config {
                 "allowlist.max_files_per_dir must be <= {MAX_FILES_PER_DIR_LIMIT} (ARCHITECTURE invariant 6), got {}",
                 self.allowlist.max_files_per_dir
             ));
+        }
+        // ADR-0002 § 4 + ARCHITECTURE invariant 6: overlay walk scope
+        // is bounded by `maxdepth ≤ 3`. Validation runs at boot only;
+        // a missing or unreadable overlay root is logged at runtime
+        // by the walker (see `src/overlay.rs::discover_layers`).
+        if self.paths.overlay_scan.enabled {
+            if self.paths.overlay_scan.roots.is_empty() {
+                return Err(anyhow!(
+                    "paths.overlay_scan.roots must be non-empty when overlay_scan.enabled is true"
+                ));
+            }
+            if self.paths.overlay_scan.maxdepth > OVERLAY_SCAN_MAXDEPTH_LIMIT {
+                return Err(anyhow!(
+                    "paths.overlay_scan.maxdepth must be <= {OVERLAY_SCAN_MAXDEPTH_LIMIT} (ARCHITECTURE invariant 6), got {}",
+                    self.paths.overlay_scan.maxdepth
+                ));
+            }
         }
         Ok(())
     }
@@ -138,6 +200,32 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
             .map(PathBuf::from)
             .collect();
     }
+    // ADR-0002 § 4: overlay-fs scan env overrides.
+    set_from_env!(
+        cfg,
+        "DEMON_PATHS__OVERLAY_SCAN_ENABLED",
+        cfg.paths.overlay_scan.enabled,
+        bool
+    );
+    if let Ok(v) = std::env::var("DEMON_PATHS__OVERLAY_SCAN_ROOTS") {
+        cfg.paths.overlay_scan.roots = v
+            .split(':')
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .collect();
+    }
+    set_from_env!(
+        cfg,
+        "DEMON_PATHS__OVERLAY_SCAN_MAXDEPTH",
+        cfg.paths.overlay_scan.maxdepth,
+        usize
+    );
+    set_from_env!(
+        cfg,
+        "DEMON_PATHS__OVERLAY_SCAN_DOTDIR_ONLY",
+        cfg.paths.overlay_scan.dotdir_only,
+        bool
+    );
     if let Ok(v) = std::env::var("DEMON_IOC__IOC_LIST") {
         cfg.ioc.ioc_list = PathBuf::from(v);
     }

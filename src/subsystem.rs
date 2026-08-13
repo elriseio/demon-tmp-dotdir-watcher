@@ -9,12 +9,31 @@ use tracing::warn;
 use crate::allowlist::Allowlist;
 use crate::config::Config;
 use crate::ioc::{hash_file, Matcher};
+use crate::overlay::{CandidateSource, LayerKind};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Candidate {
     pub path: PathBuf,
     pub entries: Vec<PathBuf>,
     pub skipped_reason: Option<SkipReason>,
+    /// ADR-0002 § 5: distinguishes host-resident candidates from
+    /// overlay-resident candidates. `None` is the legacy host
+    /// shape; `Some(CandidateSource::Overlay { .. })` tags an
+    /// overlay-path candidate emitted by `src/overlay.rs`.
+    pub source: Option<CandidateSource>,
+}
+
+impl Candidate {
+    /// Convenience: overlay source with a layer_id and kind.
+    /// Used by `src/overlay.rs::walk_overlay` to populate the
+    /// `source` field without exposing the full enum to callers
+    /// that only need the host shape.
+    pub fn with_overlay_source(self, layer_id: String, kind: LayerKind) -> Self {
+        Self {
+            source: Some(CandidateSource::Overlay { layer_id, kind }),
+            ..self
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,6 +208,7 @@ fn walk_recursive(
                         path: dir.to_path_buf(),
                         entries,
                         skipped_reason: skipped,
+                        source: None,
                     });
                     return;
                 }
@@ -202,6 +222,7 @@ fn walk_recursive(
                     path: dir.to_path_buf(),
                     entries: Vec::new(),
                     skipped_reason: Some(SkipReason::IoError(e.to_string())),
+                    source: None,
                 });
                 return;
             }
@@ -313,6 +334,7 @@ mod tests {
                 scan_roots: roots,
                 scan_maxdepth: max_depth,
                 scan_window_minutes: window_min,
+                overlay_scan: crate::config::OverlayScanConfig::default(),
             },
             ioc: IocConfig {
                 ioc_list: PathBuf::from("/dev/null"),
@@ -592,16 +614,19 @@ mod tests {
                 path: root.join(".allowed"),
                 entries: Vec::new(),
                 skipped_reason: None,
+                source: None,
             },
             Candidate {
                 path: ioc_dir.clone(),
                 entries: vec![ioc_dir.join("trunk.bin")],
                 skipped_reason: None,
+                source: None,
             },
             Candidate {
                 path: unknown_dir.clone(),
                 entries: vec![unknown_dir.join("a.txt")],
                 skipped_reason: None,
+                source: None,
             },
             // Skipped candidate: precedence check — Skipped wins
             // over Allowlisted.
@@ -609,6 +634,7 @@ mod tests {
                 path: root.join(".allowed"),
                 entries: Vec::new(),
                 skipped_reason: Some(SkipReason::TooManyFiles(99)),
+                source: None,
             },
         ];
 
