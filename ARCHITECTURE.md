@@ -32,7 +32,7 @@ or transformation, side effect.
 | Source-of-truth IOCs | /etc/tmp-watcher.iocs (one SHA-256 per line) | forensic archive |
 | Allowlist | /etc/tmp-watcher.allowlist (one glob per line) | external |
 | Logging | journald (`-t tmp-watcher`) + /var/log/tmp-watcher.log | external |
-| Notifications | NTFY push — **planned, not wired** (runtime path through `output::ntfy_push` exists but always receives `None`; see `docs/architecture/STATUS.md`) | external |
+| Notifications | NTFY push — wired (per-tick summary via `Config.actions.ntfy_url`); contract doc at `docs/contracts/webhook-payload.md` | external |
 | Secrets | env vars only; no reads from disk | operator secret manager |
 
 ## Components (target Rust port)
@@ -54,7 +54,7 @@ or transformation, side effect.
 | Subsystem count | 1 (one observable side effect) | multi-purpose |
 | Network | loopback only | accept inbound connections |
 | State retention | one poll window only | keep path history across reboots |
-| Output | journal + /var/log/tmp-watcher.log (NTFY path wired but always noop; see `docs/architecture/STATUS.md`) | `println!` past boot |
+| Output | journal + /var/log/tmp-watcher.log + NTFY post-tick push per `docs/contracts/webhook-payload.md` | `println!` past boot |
 | Secrets | env vars only | read from disk |
 | Side effect on IOC match | `chmod 000 <path>` (idempotent) | `rm -rf` (destructive) |
 | Side effect on unknown dotdir | log WARNING (NTFY push planned, see `docs/architecture/STATUS.md`) | auto-quarantine |
@@ -77,11 +77,12 @@ or transformation, side effect.
    beyond the `chmod 000` quarantine is out of scope.
 5. **Failures are loud.** Any non-zero exit must have a
    corresponding journal `error!` event with `priority = 2`
-   (CRITICAL). NTFY notification is **not** part of the
-   failure-loudness contract today because the NTFY push is
-   unwired (see `docs/architecture/STATUS.md`); when the
-   `Config.ntfy_url` field lands, the invariant re-tightens to
-   "non-zero exit + NTFY push, subject to per-config suppression".
+   (CRITICAL). When `Config.actions.ntfy_url` is set, the
+   runtime ALSO POSTs the tick summary (or the failure event)
+   to that URL with NTFY headers (`Title`, `Priority`, `Tags`)
+   and `text/plain` body per `docs/contracts/webhook-payload.md`.
+   The webhook is suppressed when `ntfy_url` is unset or empty;
+   the journal emission is never suppressed.
 6. **Walking scope is bounded.** `scan_maxdepth` ≤ 3,
    `max_files_per_dir` ≤ 10 caps the find/sha256sum cost per
    candidate; larger candidates log a WARNING and are skipped.

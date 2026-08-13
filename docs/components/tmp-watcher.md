@@ -103,6 +103,64 @@ in `docs/contracts/tmp-watcher-allowlist-ioc.md`. That contract is
 the source of truth for both the bash reference impl and the Rust
 port; if they drift, the contract is right and the impl is wrong.
 
+## Webhook channel (DE-018..DE-022)
+
+DE-018..DE-022 introduce the operator-supplied NTFY post-tick-summary
+emit. The producer is `output`; the canonical contract doc is
+`docs/contracts/webhook-payload.md`.
+
+### Inputs (per cycle)
+
+| Input | Source | Format |
+|---|---|---|
+| Per-tick `RunSummary` | `runtime::run_once` | struct with `candidates`, `allowlisted`, `ioc_matches`, `quarantined`, `unknown`, `skipped`, `unreadable_roots`, `duration_seconds` |
+| `Config.actions.ntfy_url` | `Config` | `Option<String>`; `None` ⇒ journal-only emit |
+| `tick_err` flag | `runtime::run` Err-arm | `bool`; `true` ⇒ short-circuit to `Severity::Error` |
+
+### Webhook payload
+
+The HTTP POST format, headers, body layout, and severity mapping
+are the canonical contract; see `docs/contracts/webhook-payload.md`
+for the authoritative spec. Short form:
+
+- `POST <actions.ntfy_url>` with `Title` / `Priority` / `Tags` headers
+  and `text/plain` body (`key=value` lines).
+- Severity mapping: `info` → `Priority=2`, `warn` → `3`, `error` →
+  `5`. Mapping logic is in
+  `src/output.rs::Severity::from_run_summary`.
+- Body is `candidates`, `allowlisted`, `ioc_matches`, `quarantined`,
+  `unknown`, `skipped`, `unreadable_roots` (count), `duration_seconds`.
+
+### Invariants (webhook channel-specific)
+
+1. **One POST per tick.** The runtime emits one summary per
+   `run_once` cycle; failure modes that co-occur roll up into one
+   severity (worst observed).
+2. **Webhook failure never blocks cycle completion.** A non-2xx
+   or transport timeout is logged at priority-4 WARNING and
+   propagates as `Err` to the runtime, which logs and continues;
+   the next tick retries.
+3. **`actions.ntfy_url = None` suppresses the webhook silently.**
+   The journal `info!` summary line is the only emit in that case.
+
+### Failure modes (webhook channel-specific)
+
+| Failure | Detection | Response |
+|---|---|---|
+| NTFY URL invalid / unreachable | `reqwest` connect / timeout | log `priority = 2` ERROR; runtime logs priority-4 WARNING; tick completes |
+| NTFY endpoint returns non-2xx | `reqwest::Response.status()` | log `priority = 4` ERROR; runtime logs priority-4 WARNING; tick completes |
+| `actions.ntfy_url = None` | `output::push_tick_summary` short-circuit | journal-only tick summary, no HTTP traffic |
+| `runtime.run_once` returned `Err` | `runtime.rs::run` Err-arm | severity short-circuits to `Error` (priority 5); `RunSummary::default()` used as the body source |
+
+### Observability surface (webhook channel-specific)
+
+| Signal | Tool / query |
+|---|---|
+| Last NTFY post (URL+title) | `journalctl -t tmp-watcher \| grep "ntfy post-summary"` |
+| NTFY transport failure | `journalctl -t tmp-watcher PRIORITY=4 -S -24h \| grep ntfy` |
+| NTFY non-2xx | `journalctl -t tmp-watcher -S -24h \| grep "ntfy post-summary push returned non-2xx"` |
+| Tick severity (info / warn / error) | `journalctl -t tmp-watcher -n 50 \| grep "runtime: tick summary"` (the `candidates`, `allowlisted`, ... counter line per tick) |
+
 ## Invariants (from `ARCHITECTURE.md` § Invariants)
 
 1. **Idempotent restart.** Re-running the daemon must not

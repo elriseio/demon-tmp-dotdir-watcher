@@ -135,9 +135,50 @@ Architectural goal (current wave):
    `cargo test` will fail on this daemon until renamed. Must be
    fixed as part of `AR-007`.
 
+5. **NTFY push is unwired** — **resolved: 2026-08-13 (DE-018..DE-022
+   wave close).** `Config.actions.ntfy_url` (DE-019),
+   `output::push_tick_summary` (DE-020), `docs/contracts/webhook-payload.md`
+   + invariant-5 re-tightening (DE-021), `httpmock` round-trip
+   test + README / RUNBOOK cross-reference (DE-022). See the
+   "Last Updated" entry for `wave-build-config-and-webhook-008`
+   above and `Issues/done/developer/DE-018_*..DE-022_*` for the
+   closing lineage.
+
 ## Last Updated
 
 ## Last Updated
+
+- 2026-08-13 — **Build-time config + NTFY webhook post-summary wave
+  shipped (DE-018..DE-022).** Operator directive 2026-08-13 ("у этого
+  демона 1. есть конфиг, котрый учитывается при билде ... Так это
+  надо внедрить и тут") drove the wave. `demon-docker-janitor`'s
+  three install targets (`install-config` / `install-bin` /
+  `install-units`) are backported to tmp-watcher's `Makefile`;
+  the operator-facing example config lands at
+  `contrib/config/tmp-watcher.yaml.example`; stub systemd unit
+  files (`Type=oneshot`, `OnUnitActiveSec=10min`) ship in
+  `contrib/systemd/`. DE-019 adds `Config.actions.ntfy_url` +
+  `DEMON_ACTIONS__NTFY_URL` env override. DE-020 lights the
+  per-tick NTFY post-summary emit via the assembled payload
+  (`Severity { Info, Warn, Error }` mapping per AR-017 §2.2;
+  priority 2 / 3 / 5). DE-021 publishes
+  `docs/contracts/webhook-payload.md` (request shape, headers,
+  body layout, severity mapping, examples) and re-tightens
+  `ARCHITECTURE.md` invariant 5 ("Failures are loud") to include
+  the NTFY POST. DE-022 closes the wave with a `httpmock`
+  round-trip test + `README.md` / `RUNBOOK.md` updates.
+  ARCHITECTURE.md invariant 5 ("Failures are loud") is now a
+  single, closed contract: the runtime's failure path emits both
+  a journal ERROR event and (when `actions.ntfy_url` is set) a
+  NTFY priority-5 alert. Functional systemd activation (`make
+  enable`) is intentionally NOT shipped — the daemon's README
+  § "Current state" still calls it "proposed", and operator-side
+  enablement keeps the wave wave-build-config-and-webhook-008
+  scoped to the runtime contract.
+
+  Risks: item 4 ("Smoke test binary-name drift") and item
+  "NTFY push is unwired" both cleared by this wave; see § "Risks"
+  for the resolved entries.
 
 - 2026-08-13 — **Container overlay scan completed (DE-006) + production deployment context (SA-003).**
   Operator directive 2026-08-13 ("у этого демона есть одна проблема..
@@ -267,11 +308,21 @@ Architectural goal (current wave):
   2. **NTFY alert channel** — `ORIGIN.md`,
      `ARCHITECTURE.md`, `RUNBOOK.md` previously described
      NTFY push as a working alert driven by
-     `ntfy_url = "${NTFY_URL}"`. The code path
-     (`output::ntfy_push(None, …)` in `src/runtime.rs::push_ntfy_for_match`)
-     is wired but always receives `None`; the `Config` struct
-     has no `ntfy_url` field. All four ship-docs now mark NTFY
-     as **planned, not wired**, with the wiring work tracked
+`ntfy_url = "${NTFY_URL}"`. The code path
+      (`output::ntfy_push(None, …)` in `src/runtime.rs::push_ntfy_for_match`)
+      was a placeholder pass-through at the time of AR-009
+      closure (2026-08-12); the `Config` struct did not yet have
+      a `ntfy_url` field and the runtime received an inert
+      argument value. The runtime NTFY path is now FULLY WIRED
+      as of the `wave-build-config-and-webhook-008` close
+      (2026-08-13, DE-018..DE-022): `Config.actions.ntfy_url` +
+      `DEMON_ACTIONS__NTFY_URL` env override (DE-019), the
+      per-tick summary emit via `output::push_tick_summary` and
+      `Severity::from_run_summary` (DE-020), the contract doc
+      `docs/contracts/webhook-payload.md` (DE-021), and the
+      `httpmock` round-trip test + README/RUNBOOK cross-references
+      (DE-022). All four ship-docs now describe the wired NTFY
+      channel per `docs/contracts/webhook-payload.md`.
      as a follow-up. ARCHITECTURE.md invariant 5
      ("Failures are loud") was re-tightened to journal-only
      today; the invariant re-expands to include NTFY push
