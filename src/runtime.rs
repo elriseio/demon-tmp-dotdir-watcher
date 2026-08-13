@@ -8,19 +8,18 @@
 //!   3. Quarantine IOC matches (`subsystem::quarantine`).
 //!   4. Emit journal + NTFY events (`output::emit_*`).
 //!
-//! The runtime is owned by `main()` and ticked once per second
-//! (the systemd timer drives cadence per ARCHITECTURE.md
-//! invariant 2; the per-second ticker is for prompt shutdown
-//! responsiveness).
+//! CR-005: the runtime is owned by `main()` and runs exactly one
+//! poll cycle per systemd activation (`Type=oneshot`). Cadence
+//! is driven by the systemd timer per ARCHITECTURE.md
+//! invariant 2; the daemon itself does not drive an
+//! `interval()`-based cadence loop.
 
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use tokio::sync::watch;
-use tokio::time::{interval, MissedTickBehavior};
 use tracing::{error, info, warn};
 
 use crate::allowlist::Allowlist;
@@ -237,45 +236,48 @@ impl Runtime {
         Ok(summary)
     }
 
-    /// AR-008: long-lived entry point. Ticks once per second
-    /// (interval is for shutdown responsiveness; cadence is
-    /// driven by the systemd timer per invariant 2).
+    /// CR-005: oneshot entry point. Runs exactly one poll cycle
+    /// per systemd activation and returns `Ok(())` so the systemd
+    /// timer (`Type=oneshot` + `OnUnitActiveSec=10min`) drives
+    /// cadence per ARCHITECTURE.md invariant 2.
+    ///
+    /// SIGTERM (from `systemctl stop` during a long poll) is
+    /// observed via `shutdown_rx.changed()` and interrupts the
+    /// poll cleanly inside one activation; the runtime then
+    /// returns `Ok(())` so systemd sees a clean exit and the
+    /// next timer activation starts a fresh process. Per-tick
+    /// errors are logged at CRITICAL but do NOT prevent the
+    /// `Ok(())` exit (invariant 5: failures are loud, not
+    /// crash-inducing).
     pub async fn run(mut self) -> Result<()> {
-        let mut tick = interval(Duration::from_secs(1));
-        tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            tokio::select! {
-                _ = self.shutdown_rx.changed() => {
-                    // shutdown_rx is a watch::Receiver<bool>;
-                    // borrow() is sync and read after the
-                    // notification fired. The receiver does not
-                    // hold a std::sync::MutexGuard across the
-                    // .await on `changed()` — `changed()` is the
-                    // only await point and the receiver's internal
-                    // state is owned by tokio, so clippy
-                    // `await_holding_lock` stays silent.
-                    if *self.shutdown_rx.borrow() {
-                        info!("shutdown: requested by signal");
-                        return Ok(());
-                    }
-                }
-                _ = tick.tick() => {
-                    // AR-008: one full poll pipeline per tick.
-                    // Per-tick errors are logged at CRITICAL but
-                    // do NOT abort the loop (invariant 5: failures
-                    // are loud, not crash-inducing).
-                    if let Err(e) = self.run_once().await {
-                        error!(
-                            target: "tmp-watcher",
-                            priority = 2,
-                            error = %e,
-                            "runtime: tick failed",
-                        );
-                    }
+        // Detach a cloned shutdown receiver so the two select!
+        // branches do not fight over `&mut self`. The cloned
+        // receiver shares the underlying watch state, so a
+        // `tx.send(true)` from the signal handler is observed
+        // here just as it would be on the original receiver.
+        let mut shutdown_rx = self.shutdown_rx.clone();
+        tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => {
+                if *shutdown_rx.borrow() {
+                    info!("shutdown: requested by signal before poll completed");
+                } else {
+                    info!("shutdown: watch notification observed; exiting");
                 }
             }
+            result = self.run_once() => match result {
+                Ok(_) => info!(
+                    "runtime: oneshot poll complete; exiting per Type=oneshot contract"
+                ),
+                Err(e) => error!(
+                    target: "tmp-watcher",
+                    priority = 2,
+                    error = %e,
+                    "runtime: tick failed",
+                ),
+            },
         }
+        Ok(())
     }
 }
 
