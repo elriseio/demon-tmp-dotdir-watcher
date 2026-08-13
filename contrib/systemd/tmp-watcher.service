@@ -1,0 +1,32 @@
+[Unit]
+Description=demon-tmp-dotdir-watcher (shallow dot-directory IOC scanner)
+Documentation=file:<repo>/README.md
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# ARCHITECTURE.md invariant 2: cadence is driven by the systemd timer
+# (see tmp-watcher.timer); the daemon runs exactly one poll cycle per
+# activation and exits. Never use Type=simple or Type=notify; never run
+# an interval() inside the daemon.
+ExecStart=/usr/local/libexec/tmp-watcher/demon-tmp-dotdir-watcher /etc/tmp-watcher.yaml
+WorkingDirectory=/var/lib/tmp-watcher
+StateDirectory=tmp-watcher
+LogsDirectory=tmp-watcher
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=false
+ReadWritePaths=/run /var/log /var/tmp /tmp /home
+# CapabilityBoundingSet is left empty by default; tighten as needed.
+# Note CR-006: a chmod 700 /home/<user> subtree becomes invisible when
+# all caps are dropped. See README § Visibility caveat.
+CapabilityBoundingSet=
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tmp-watcher
+
+[Install]
+WantedBy=multi-user.target

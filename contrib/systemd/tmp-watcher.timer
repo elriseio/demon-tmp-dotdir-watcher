@@ -1,0 +1,16 @@
+[Unit]
+Description=demon-tmp-dotdir-watcher poll timer (every 10 minutes)
+Documentation=file:<repo>/README.md
+
+[Timer]
+OnBootSec=2min
+# ARCHITECTURE.md invariant 2: the systemd timer drives cadence. The
+# daemon itself does not run an interval() loop (CR-005 confirms this
+# at runtime); the timer is the only cadence source.
+OnUnitActiveSec=10min
+AccuracySec=30s
+Persistent=true
+Unit=tmp-watcher.service
+
+[Install]
+WantedBy=timers.target
