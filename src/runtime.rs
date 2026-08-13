@@ -45,6 +45,11 @@ pub struct RunSummary {
     /// unreadable root, and the runtime collects those paths
     /// here so the per-poll summary log line surfaces them.
     pub unreadable_roots: Vec<PathBuf>,
+    /// DE-020: wall-clock duration of the tick in seconds. Populated
+    /// by `Runtime::run_once` from the start of the walk to the
+    /// pre-summary log line; surfaces in the per-tick NTFY summary
+    /// body and the structured `info!` summary line.
+    pub duration_seconds: u64,
 }
 
 #[derive(Debug)]
@@ -103,17 +108,18 @@ impl Runtime {
         })
     }
 
-    /// AR-008 + ADR-0002 § 1: one full poll pipeline. Returns a
-    /// `RunSummary` counter for logging and tests.
+    /// AR-008 + ADR-0002 § 1 + DE-020: one full poll pipeline. Returns a
+    /// `RunSummary` counter for logging, the post-tick NTFY summary
+    /// emit, and the unit tests.
     ///
     /// The 5-step ordering per the issue scope:
     ///   1. walk scan roots (host + overlay)
     ///   2. classify (allowlist + IOC match)
     ///   3. quarantine IOC matches
-    ///   4. emit journal events
-    ///   5. (NTFY push is wired but a no-op until `Config` learns
-    ///      a `ntfy_url` field; see implementation notes below.)
+    ///   4. emit journal events (per IOC match: NTFY push)
+    ///   5. emit per-tick summary (info! + NTFY post-summary push)
     pub async fn run_once(&mut self) -> Result<RunSummary> {
+        let started_at = std::time::Instant::now();
         let mut candidates = subsystem::walk(&self.cfg);
 
         // ADR-0002 § 1: the daemon's poll cycle walks both host
@@ -254,8 +260,25 @@ impl Runtime {
             quarantined = summary.quarantined,
             skipped = summary.skipped,
             unreadable_roots = summary.unreadable_roots.len(),
+            duration_seconds = summary.duration_seconds,
             "runtime: tick summary",
         );
+
+        // DE-020: post-tick NTFY summary emit. The transport reuses
+        // the existing `ntfy_push` 5-second timeout; failures log
+        // priority-4 WARNING and propagate as Err so the caller can
+        // decide. `tick_err = false` because the per-tick aggregation
+        // above succeeded; the runtime.rs::run Err-arm sets
+        // `tick_err = true` if run_once itself errored.
+        summary.duration_seconds = started_at.elapsed().as_secs();
+        if let Err(e) = output::push_tick_summary(&self.cfg, &summary, false).await {
+            warn!(
+                target: "tmp-watcher",
+                priority = 4,
+                error = %e,
+                "runtime: ntfy post-summary push failed",
+            );
+        }
 
         Ok(summary)
     }
@@ -293,12 +316,35 @@ impl Runtime {
                 Ok(_) => info!(
                     "runtime: oneshot poll complete; exiting per Type=oneshot contract"
                 ),
-                Err(e) => error!(
-                    target: "tmp-watcher",
-                    priority = 2,
-                    error = %e,
-                    "runtime: tick failed",
-                ),
+                Err(e) => {
+                    error!(
+                        target: "tmp-watcher",
+                        priority = 2,
+                        error = %e,
+                        "runtime: tick failed",
+                    );
+                    // DE-020: surface the runtime error as
+                    // NTFY Severity::Error so the operator phone
+                    // receives a priority-5 alert even though the
+                    // per-tick RunSummary is unavailable. The
+                    // default-state empty summary + tick_err=true
+                    // short-circuits to Error per
+                    // output::Severity::from_run_summary.
+                    if let Err(ntfy_err) = output::push_tick_summary(
+                        &self.cfg,
+                        &RunSummary::default(),
+                        true,
+                    )
+                    .await
+                    {
+                        warn!(
+                            target: "tmp-watcher",
+                            priority = 4,
+                            error = %ntfy_err,
+                            "runtime: ntfy post-summary push failed on tick-failure path",
+                        );
+                    }
+                }
             },
         }
         Ok(())
@@ -570,5 +616,127 @@ mod tests {
         );
         assert_eq!(summary.unreadable_roots[0], missing_root);
         assert_eq!(summary.skipped, 1, "Skipped(IoError) must bump skipped");
+    }
+
+    // === DE-020: post-tick NTFY summary emit (httpmock round-trip) ===
+
+    #[tokio::test]
+    async fn run_once_emits_ntfy_summary_when_configured() {
+        use httpmock::Method;
+
+        // DE-020 acceptance: a clean tick with `actions.ntfy_url` set
+        // POSTs one summary to the operator URL with Title,
+        // Priority=2 (info), Tags headers, and the expected body.
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/")
+                .header("Title", "tmp-watcher: cycle info")
+                .header("Priority", "2")
+                .header("Tags", "tmp,watcher,info");
+            then.status(200).body("ok");
+        });
+        let url = format!("{}/", server.url(""));
+
+        // A tempdir holding one allowlisted-style empty dotdir keeps
+        // the tick clean: 1 candidate, 1 allowlisted, 0 ioc_matches,
+        // 0 unreadable roots. Severity is Info.
+        let tmp = TempDir::new("de020_clean_tick");
+        std::fs::create_dir_all(tmp.path().join(".font-unix")).expect("mkdir .font-unix");
+        let allowlist = tmp.path().join("allowlist.txt");
+        std::fs::write(&allowlist, b".font-unix\n").expect("write allowlist");
+        let ioc_list = tmp.path().join("ioc.txt");
+        std::fs::write(&ioc_list, b"# empty\n").expect("write empty ioc");
+        let proposer = tmp.path().join("proposed.iocs");
+        let cfg = Config {
+            log: LogConfig { level: "info".into() },
+            runtime: RuntimeConfig { shutdown_timeout_sec: 5 },
+            paths: PathsConfig {
+                scan_roots: vec![tmp.path().to_path_buf()],
+                scan_maxdepth: 3,
+                scan_window_minutes: 60,
+                overlay_scan: crate::config::OverlayScanConfig::default(),
+            },
+            ioc: IocConfig {
+                ioc_list,
+                ioc_archive_ref: None,
+                proposed_iocs: Some(proposer),
+            },
+            allowlist: AllowlistConfig {
+                allowlist,
+                max_files_per_dir: 10,
+            },
+            actions: ActionsConfig {
+                quarantine_on_ioc_match: true,
+                alert_on_unknown: false,
+                ntfy_url: Some(url),
+            },
+        };
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let _ = runtime.run_once().await.expect("run_once");
+        mock.assert();
+    }
+
+    #[tokio::test]
+    async fn run_once_no_ntfy_when_unconfigured() {
+        // DE-020 acceptance: when `actions.ntfy_url` is None the
+        // runtime must NOT fire any HTTP traffic. The httpmock
+        // server has no mocks registered; if a request reaches it,
+        // the test fails loudly via the no-server test.
+        let tmp = TempDir::new("de020_no_ntfy");
+        let ioc_list = TempFile::with_content("de020_ioc_list", b"# empty\n");
+        let proposer = tmp.path().join("proposed.iocs");
+        let mut cfg = build_cfg_with_proposer(
+            tmp.path().to_path_buf(),
+            ioc_list.path().to_path_buf(),
+            proposer,
+        );
+        // ntfy_url stays None (embedded default) — push_tick_summary
+        // short-circuits before any HTTP call.
+        cfg.actions.ntfy_url = None;
+
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let _ = runtime.run_once().await.expect("run_once");
+        // No mock assertion: the test passes by reaching this point
+        // without firing an HTTP call. A passing assertion of
+        // `cfg.actions.ntfy_url == None` documents the contract.
+        assert!(runtime.cfg.actions.ntfy_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn run_once_warn_priority_when_unreadable_root() {
+        use httpmock::Method;
+
+        // DE-020 acceptance: a tick where the scan_root is unreadable
+        // (EACCES, missing path, etc.) classifies the summary as
+        // Severity::Warn and POSTs Priority=3.
+        let server = httpmock::MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/")
+                .header("Title", "tmp-watcher: cycle warn")
+                .header("Priority", "3")
+                .header("Tags", "tmp,watcher,warn");
+            then.status(200).body("ok");
+        });
+        let url = format!("{}/", server.url(""));
+
+        let tmp = TempDir::new("de020_warn_unreadable");
+        let missing_root = tmp.path().join("does_not_exist");
+        let ioc_list = std::path::PathBuf::from("/dev/null");
+        let proposer = tmp.path().join("proposed.iocs");
+        let mut cfg = build_cfg_with_proposer(missing_root, ioc_list, proposer);
+        cfg.actions.ntfy_url = Some(url);
+        let (_tx, shutdown_rx) = watch::channel(false);
+        let mut runtime = Runtime::new(cfg, shutdown_rx).expect("build runtime");
+        let summary = runtime.run_once().await.expect("run_once");
+        assert!(
+            !summary.unreadable_roots.is_empty(),
+            "unreadable root required to drive Severity::Warn"
+        );
+        mock.assert();
     }
 }

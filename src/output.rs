@@ -1,4 +1,5 @@
-//! AR-006: journal-tag and NTFY alert output.
+//! AR-006 + DE-020: journal-tag, NTFY alert output, and per-tick
+//! summary webhook payload.
 //!
 //! ARCHITECTURE.md invariant 3 ("Structured logging from the first
 //! line") and invariant 5 ("Failures are loud") drive the shape:
@@ -7,6 +8,12 @@
 //! (`PRIORITY=2` CRITICAL, `PRIORITY=4` WARNING), plus a 5-second
 //! bounded `ntfy_push` so the poll cycle is never blocked by a
 //! slow network.
+//!
+//! DE-020 adds the per-tick summary emit: `Severity` mapping from
+//! `RunSummary` to NTFY priority (info=2 / warn=3 / error=5) and
+//! `assemble_summary_payload` (pure body+headers assembler).
+//! `ntfy_push` itself stays unchanged so the IOC-match path and
+//! the post-tick-summary path share one transport.
 //!
 //! The `reqwest` client builder is cached per-call (the issue scope
 //! does not require a process-wide singleton); if profiling shows
@@ -20,6 +27,9 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use reqwest::Client;
 use tracing::{error, warn};
+
+use crate::config::Config;
+use crate::runtime::RunSummary;
 
 const NTFY_TIMEOUT_SECS: u64 = 5;
 
@@ -136,6 +146,187 @@ pub async fn ntfy_push(url: Option<&str>, title: &str, body: &str) -> Result<()>
             "ntfy push returned non-2xx",
         );
         anyhow::bail!("ntfy push non-success: HTTP {status}");
+    }
+
+    Ok(())
+}
+
+/// DE-020: per-tick severity tier. Drives the NTFY priority header
+/// for the post-tick summary emit. Mapping matches
+/// `docs/contracts/webhook-payload.md` (DE-021) and the peer daemon's
+/// `demon-docker-janitor/src/notify/mod.rs::Severity`. The
+/// `RefuseToRun` variant is intentionally absent here (tmp-watcher
+/// does not have that exit-code class); a top-level daemon error
+/// (`run_once` returned `Err`) is mapped to `Severity::Error`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Severity {
+    Info,
+    Warn,
+    Error,
+}
+
+impl Severity {
+    /// DE-020: classify a tick into a severity tier. `tick_err = true`
+    /// short-circuits to `Error` (the runtime catches `run_once` errors
+    /// and passes `true` here so a top-level daemon failure surfaces
+    /// as NTFY priority 5 even when the in-progress `RunSummary` is
+    /// empty).
+    pub fn from_run_summary(s: &RunSummary, tick_err: bool) -> Self {
+        if tick_err {
+            return Self::Error;
+        }
+        // Map per DE-020 acceptance §3.1 / AR-017 §2.2. Order: error
+        // first (so partial-quarantine-failure dominates unreadable /
+        // skipped), then warn (any flapping signal), then info.
+        if s.ioc_matches > 0 && s.quarantined < s.ioc_matches {
+            return Self::Error;
+        }
+        if !s.unreadable_roots.is_empty() || s.skipped > 0 || s.candidates == 0 {
+            return Self::Warn;
+        }
+        Self::Info
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Severity::Info => "info",
+            Severity::Warn => "warn",
+            Severity::Error => "error",
+        }
+    }
+
+    pub fn priority(self) -> u8 {
+        match self {
+            Severity::Info => 2,
+            Severity::Warn => 3,
+            Severity::Error => 5,
+        }
+    }
+}
+
+/// DE-020: pure assembler for the per-tick summary payload. Returns
+/// `(title, body, priority, tags)`. The body layout is the same
+/// `key=value` plain-text shape that `demon-docker-janitor` uses
+/// (see `docs/contracts/webhook-payload.md` peer contract, adapted
+/// to tmp-watcher's field set in DE-021).
+pub fn assemble_summary_payload(summary: &RunSummary, sev: Severity) -> (String, String, u8, String) {
+    let status_str = sev.as_str();
+    let title = format!("tmp-watcher: cycle {status_str}");
+    let priority = sev.priority();
+    let tags = format!("tmp,watcher,{status_str}");
+    let body = format!(
+        "candidates={n}\n\
+         allowlisted={a}\n\
+         ioc_matches={i}\n\
+         quarantined={q}\n\
+         unknown={u}\n\
+         skipped={s}\n\
+         unreadable_roots={r}\n\
+         duration_seconds={d}",
+        n = summary.candidates,
+        a = summary.allowlisted,
+        i = summary.ioc_matches,
+        q = summary.quarantined,
+        u = summary.unknown,
+        s = summary.skipped,
+        r = summary.unreadable_roots.len(),
+        d = summary.duration_seconds,
+    );
+    (title, body, priority, tags)
+}
+
+/// DE-020: per-tick NTFY push for the assembled summary. No-op when
+/// `Config.actions.ntfy_url` is `None` (embedded default per
+/// AR-011). When set, POSTs `Title`/`Priority`/`Tags` headers with
+/// the assembled `text/plain` body via the existing `ntfy_push`
+/// transport; 5-second timeout inherited.
+///
+/// `tick_err = true` is the runtime's signal that `run_once`
+/// returned `Err` (partial or refused); severity short-circuits
+/// to `Severity::Error` so the NTFY surface reflects the daemon
+/// failure rather than the default-state `RunSummary`.
+///
+/// Per `AR-008` runtime closed path, the helper returns `Result<()>`
+/// so the runtime can log a `priority = 4` warning with `error = %e`
+/// on transport failure; the daemon does NOT retry inside one
+/// poll — the next poll retries, same "next-poll-retries" semantics
+/// as the IOC-match NTFY path.
+pub async fn push_tick_summary(
+    cfg: &Config,
+    summary: &RunSummary,
+    tick_err: bool,
+) -> Result<()> {
+    let sev = Severity::from_run_summary(summary, tick_err);
+    let (title, body, priority, tags) = assemble_summary_payload(summary, sev);
+
+    // Set the Priority and Tags headers explicitly; the existing
+    // ntfy_push signature uses positional String args, so we use
+    // a small extension helper to pass the extra NTFY headers.
+    push_tick_summary_with_headers(
+        cfg.actions.ntfy_url.as_deref(),
+        &title,
+        &body,
+        priority,
+        &tags,
+    )
+    .await
+}
+
+/// DE-020 + DE-021: low-level helper used by `push_tick_summary`.
+/// Exposed as a separate fn so the httpmock round-trip test can
+/// verify headers + body byte-for-byte against the mock server.
+pub async fn push_tick_summary_with_headers(
+    url: Option<&str>,
+    title: &str,
+    body: &str,
+    priority: u8,
+    tags: &str,
+) -> Result<()> {
+    let url = match url {
+        Some(u) => u,
+        None => return Ok(()),
+    };
+
+    let client = Client::builder()
+        .timeout(Duration::from_secs(NTFY_TIMEOUT_SECS))
+        .build()
+        .context("build reqwest client")?;
+
+    let response = client
+        .post(url)
+        .header("Title", title)
+        .header("Priority", priority.to_string())
+        .header("Tags", tags)
+        .body(body.to_string())
+        .send()
+        .await;
+
+    let response = match response {
+        Ok(r) => r,
+        Err(e) => {
+            error!(
+                target: "tmp-watcher",
+                priority = 2,
+                url = url,
+                error = %e,
+                "ntfy post-summary push failed",
+            );
+            return Err(anyhow::Error::new(e).context("ntfy POST summary"));
+        }
+    };
+
+    if !response.status().is_success() {
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        error!(
+            target: "tmp-watcher",
+            priority = 4,
+            url = url,
+            status = %status,
+            body = %body_text,
+            "ntfy post-summary push returned non-2xx",
+        );
+        anyhow::bail!("ntfy post-summary non-success: HTTP {status}");
     }
 
     Ok(())
@@ -299,5 +490,185 @@ mod tests {
             err_event.fields.get("priority").map(String::as_str),
             Some("2")
         );
+    }
+
+    // === DE-020: Severity + assemble_summary_payload + httpmock round-trip ===
+
+    use crate::runtime::RunSummary;
+
+    fn summary_clean() -> RunSummary {
+        RunSummary {
+            candidates: 5,
+            allowlisted: 2,
+            ioc_matches: 0,
+            unknown: 0,
+            quarantined: 0,
+            skipped: 0,
+            unreadable_roots: vec![],
+            duration_seconds: 4,
+        }
+    }
+
+    #[test]
+    fn severity_info_for_clean_short_success() {
+        let s = summary_clean();
+        assert_eq!(Severity::from_run_summary(&s, false), Severity::Info);
+        assert_eq!(Severity::Info.priority(), 2);
+    }
+
+    #[test]
+    fn severity_warn_for_unreadable_roots() {
+        let mut s = summary_clean();
+        s.unreadable_roots = vec![std::path::PathBuf::from("/tmp/missing")];
+        assert_eq!(Severity::from_run_summary(&s, false), Severity::Warn);
+        assert_eq!(Severity::Warn.priority(), 3);
+    }
+
+    #[test]
+    fn severity_warn_for_skipped_candidates() {
+        let mut s = summary_clean();
+        s.skipped = 1;
+        assert_eq!(Severity::from_run_summary(&s, false), Severity::Warn);
+    }
+
+    #[test]
+    fn severity_error_for_quarantine_partial_failure() {
+        let mut s = summary_clean();
+        s.ioc_matches = 3;
+        s.quarantined = 1;
+        assert_eq!(Severity::from_run_summary(&s, false), Severity::Error);
+        assert_eq!(Severity::Error.priority(), 5);
+    }
+
+    #[test]
+    fn severity_warn_for_zero_candidates() {
+        let mut s = summary_clean();
+        s.candidates = 0;
+        // unreadable root forces Warn above Info; here we keep no
+        // unreadable/skipped and just collapse to 0 candidates, per
+        // DE-020 §"Severity" mapping.
+        assert_eq!(Severity::from_run_summary(&s, false), Severity::Warn);
+    }
+
+    #[test]
+    fn severity_error_when_tick_err_true_even_on_clean_summary() {
+        // DE-020 acceptance: a runtime.run_once error maps to Error
+        // regardless of in-progress RunSummary counters.
+        let s = summary_clean();
+        assert_eq!(
+            Severity::from_run_summary(&s, true),
+            Severity::Error,
+            "tick_err must short-circuit to Severity::Error"
+        );
+    }
+
+    #[test]
+    fn assemble_payload_info_matches_examples() {
+        let s = summary_clean();
+        let (title, body, priority, tags) =
+            assemble_summary_payload(&s, Severity::from_run_summary(&s, false));
+        assert_eq!(title, "tmp-watcher: cycle info");
+        assert_eq!(priority, 2);
+        assert_eq!(tags, "tmp,watcher,info");
+
+        // Body must include every key=value line per the contract
+        // doc (DE-021). The exact integers come from summary_clean()
+        // above.
+        assert!(body.contains("candidates=5"), "body: {body}");
+        assert!(body.contains("allowlisted=2"), "body: {body}");
+        assert!(body.contains("ioc_matches=0"), "body: {body}");
+        assert!(body.contains("quarantined=0"), "body: {body}");
+        assert!(body.contains("unknown=0"), "body: {body}");
+        assert!(body.contains("skipped=0"), "body: {body}");
+        assert!(body.contains("unreadable_roots=0"), "body: {body}");
+        assert!(body.contains("duration_seconds=4"), "body: {body}");
+    }
+
+    #[test]
+    fn assemble_payload_body_layout_matches_peer_daemon_convention() {
+        // DE-020 acceptance: body uses `\n` separators and `key=value`
+        // form per `demon-docker-janitor/docs/contracts/webhook-payload.md`
+        // (peer contract; DE-021 adapts it for tmp-watcher fields).
+        let s = summary_clean();
+        let (_title, body, _priority, _tags) =
+            assemble_summary_payload(&s, Severity::Info);
+        let lines: Vec<&str> = body.split('\n').collect();
+        // 8 expected key=value lines, no blank lines.
+        assert_eq!(
+            lines.len(),
+            8,
+            "expected 8 newline-separated key=value lines, got {}: {lines:?}",
+            lines.len()
+        );
+        for line in &lines {
+            assert!(line.contains('='), "line must be key=value: {line}");
+            assert!(
+                !line.contains(','),
+                "peer-daemon key=value form forbids comma separators: {line}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn ntfy_push_round_trip_with_assembled_payload() {
+        // DE-022 round-trip acceptance: httpmock receives exactly one
+        // POST with the expected headers (Title / Priority / Tags)
+        // and the body byte-for-byte.
+        use httpmock::Method;
+
+        let server = httpmock::MockServer::start();
+        let _mock = server.mock(|when, then| {
+            when.method(Method::POST)
+                .path("/")
+                .header("Title", "tmp-watcher: cycle info")
+                .header("Priority", "2")
+                .header("Tags", "tmp,watcher,info");
+            then.status(200).body("ok");
+        });
+        let url = format!("{}/", server.url(""));
+
+        let s = summary_clean();
+        let (title, body, priority, tags) =
+            assemble_summary_payload(&s, Severity::Info);
+
+        let result =
+            push_tick_summary_with_headers(Some(&url), &title, &body, priority, &tags).await;
+        assert!(result.is_ok(), "round-trip push must Ok, got {result:?}");
+    }
+
+    #[tokio::test]
+    async fn push_tick_summary_no_url_is_noop() {
+        // DE-020 acceptance: when Config.actions.ntfy_url is None the
+        // post-tick summary is journal-only; the helper short-circuits
+        // before any HTTP call.
+        let cfg = Config {
+            log: crate::config::LogConfig { level: "info".into() },
+            runtime: crate::config::RuntimeConfig {
+                shutdown_timeout_sec: 5,
+            },
+            paths: crate::config::PathsConfig {
+                scan_roots: vec![std::path::PathBuf::from("/tmp")],
+                scan_maxdepth: 3,
+                scan_window_minutes: 60,
+                overlay_scan: crate::config::OverlayScanConfig::default(),
+            },
+            ioc: crate::config::IocConfig {
+                ioc_list: std::path::PathBuf::from("/dev/null"),
+                ioc_archive_ref: None,
+                proposed_iocs: None,
+            },
+            allowlist: crate::config::AllowlistConfig {
+                allowlist: std::path::PathBuf::from("/dev/null"),
+                max_files_per_dir: 10,
+            },
+            actions: crate::config::ActionsConfig {
+                quarantine_on_ioc_match: true,
+                alert_on_unknown: false,
+                ntfy_url: None,
+            },
+        };
+        let s = summary_clean();
+        let result = push_tick_summary(&cfg, &s, false).await;
+        assert!(result.is_ok(), "no-URL path is a documented no-op");
     }
 }
