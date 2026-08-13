@@ -85,7 +85,8 @@ fn print_usage() {
            DEMON_ALLOWLIST__ALLOWLIST\n\
            DEMON_ALLOWLIST__MAX_FILES_PER_DIR\n\
            DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH\n\
-           DEMON_ACTIONS__ALERT_ON_UNKNOWN"
+           DEMON_ACTIONS__ALERT_ON_UNKNOWN\n\
+           DEMON_ACTIONS__NTFY_URL"
     );
 }
 

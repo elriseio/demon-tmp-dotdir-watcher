@@ -363,6 +363,7 @@ mod tests {
             actions: ActionsConfig {
                 quarantine_on_ioc_match: false,
                 alert_on_unknown: false,
+                ntfy_url: None,
             },
         }
     }

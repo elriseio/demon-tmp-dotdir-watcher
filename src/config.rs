@@ -107,6 +107,13 @@ pub struct AllowlistConfig {
 pub struct ActionsConfig {
     pub quarantine_on_ioc_match: bool,
     pub alert_on_unknown: bool,
+    /// DE-019: operator-supplied NTFY topic URL. When `Some(_)`, the
+    /// runtime POSTs the per-tick summary via `output::ntfy_push`.
+    /// When `None` (embedded default), the alert channel is journal-only
+    /// (per AR-011: host-agnostic embedded default; the concrete value
+    /// lives in `/etc/tmp-watcher.yaml` or `DEMON_ACTIONS__NTFY_URL`).
+    #[serde(default)]
+    pub ntfy_url: Option<String>,
 }
 
 const SCAN_MAXDEPTH_LIMIT: usize = 3;
@@ -256,6 +263,13 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
         cfg.actions.alert_on_unknown,
         bool
     );
+    // DE-019: NTFY topic URL. Mirror the `DEMON_IOC__IOC_LIST` override
+    // pattern: raw `std::env::var` + `PathBuf::from(...)` style is
+    // unsuitable for a free-form URL string, so we use the explicit
+    // form and warn on invalid (non-UTF-8) values without panicking.
+    if let Ok(v) = std::env::var("DEMON_ACTIONS__NTFY_URL") {
+        cfg.actions.ntfy_url = Some(v);
+    }
 
     cfg
 }
@@ -419,6 +433,41 @@ actions:
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(cfg.paths.scan_maxdepth, 2);
         std::env::remove_var("DEMON_PATHS__SCAN_MAXDEPTH");
+    }
+
+    /// DE-019: serialised env-override test for `DEMON_ACTIONS__NTFY_URL`.
+    ///
+    /// The acceptance criterion is three checks (env-override-set /
+    /// env-override-unset / embedded-default-has-no-ntfy-url). They all
+    /// share the same env var, so we run them in one `#[test]` to avoid
+    /// `std::env::set_var` race conditions under Rust's parallel test
+    /// runner (each sub-case is followed by a deterministic removal of
+    /// the env var before the next sub-case).
+    #[test]
+    fn env_override_ntfy_url_set_unset_and_default() {
+        // 1. Embedded default: host-agnostic, no concrete NTFY URL
+        //    (per AR-011 / AR-010 host-agnostic rule).
+        std::env::remove_var("DEMON_ACTIONS__NTFY_URL");
+        let cfg = load_config(None).expect("default config must parse");
+        assert!(
+            cfg.actions.ntfy_url.is_none(),
+            "embedded default must carry no ntfy_url (AR-011 host-agnostic rule)"
+        );
+        // 2. With env var set: the field is populated verbatim.
+        std::env::set_var("DEMON_ACTIONS__NTFY_URL", "https://ntfy.sh/test");
+        let cfg = load_config(None).expect("default config must parse");
+        assert_eq!(
+            cfg.actions.ntfy_url,
+            Some("https://ntfy.sh/test".to_string()),
+            "DEMON_ACTIONS__NTFY_URL must populate actions.ntfy_url"
+        );
+        // 3. With env var removed again: field returns to None.
+        std::env::remove_var("DEMON_ACTIONS__NTFY_URL");
+        let cfg = load_config(None).expect("default config must parse");
+        assert_eq!(
+            cfg.actions.ntfy_url, None,
+            "DEMON_ACTIONS__NTFY_URL unset must keep embedded-default None"
+        );
     }
 
     #[test]

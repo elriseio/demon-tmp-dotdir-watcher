@@ -185,8 +185,13 @@ impl Runtime {
                             QuarantineOutcome::Applied => {
                                 summary.quarantined += 1;
                                 output::emit_ioc_match(basename, &c.path, sha256.as_str());
-                                if let Err(e) =
-                                    push_ntfy_for_match(basename, &c.path, sha256.as_str()).await
+                                if let Err(e) = push_ntfy_for_match(
+                                    basename,
+                                    &c.path,
+                                    sha256.as_str(),
+                                    self.cfg.actions.ntfy_url.as_deref(),
+                                )
+                                .await
                                 {
                                     warn!(
                                         target: "tmp-watcher",
@@ -300,15 +305,19 @@ impl Runtime {
     }
 }
 
-/// AR-008: NTFY push for an IOC match. `url` is `None` until
-/// `Config` gains a `ntfy_url` field (a deliberate non-goal of
-/// this task per the issue's scope); `output::ntfy_push(None, …)`
-/// is a documented no-op. The runtime path is wired so adding
-/// the config field later is a one-line change.
-async fn push_ntfy_for_match(basename: &str, path: &Path, hash: &str) -> Result<()> {
+/// AR-008 + DE-019: NTFY push for an IOC match. The URL is taken
+/// from `self.cfg.actions.ntfy_url`; when `None` (embedded default
+/// per AR-011), `output::ntfy_push(None, …)` is a documented no-op
+/// and the IOC match surfaces on the journal only.
+async fn push_ntfy_for_match(
+    basename: &str,
+    path: &Path,
+    hash: &str,
+    ntfy_url: Option<&str>,
+) -> Result<()> {
     let title = format!("tmp-watcher IOC match: {basename}");
     let body = format!("path={} sha256={}", path.display(), hash);
-    output::ntfy_push(None, &title, &body).await
+    output::ntfy_push(ntfy_url, &title, &body).await
 }
 
 #[cfg(test)]
@@ -368,6 +377,7 @@ mod tests {
             actions: ActionsConfig {
                 quarantine_on_ioc_match: true,
                 alert_on_unknown: false,
+                ntfy_url: None,
             },
         };
 
@@ -421,6 +431,7 @@ mod tests {
             actions: ActionsConfig {
                 quarantine_on_ioc_match: true,
                 alert_on_unknown: false,
+                ntfy_url: None,
             },
         }
     }
