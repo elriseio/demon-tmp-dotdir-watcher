@@ -12,4 +12,5 @@ Makefile.agent
 Makefile
 .symposium/
 Issues/
-tmp-watcher.conf
+/*.conf
+/*.toml
