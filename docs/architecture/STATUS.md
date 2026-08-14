@@ -155,7 +155,7 @@ Architectural goal (current wave):
   three install targets (`install-config` / `install-bin` /
   `install-units`) are backported to tmp-watcher's `Makefile`;
   the operator-facing example config lands at
-  `contrib/config/tmp-watcher.yaml.example`; stub systemd unit
+  `contrib/config/tmp-watcher.conf.example`; stub systemd unit
   files (`Type=oneshot`, `OnUnitActiveSec=10min`) ship in
   `contrib/systemd/`. DE-019 adds `Config.actions.ntfy_url` +
   `DEMON_ACTIONS__NTFY_URL` env override. DE-020 lights the

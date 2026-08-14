@@ -1,9 +1,9 @@
 # Example configuration for demon-tmp-dotdir-watcher.
 #
-# Copy to /etc/tmp-watcher.toml and edit as needed.
+# Copy to /etc/tmp-watcher.conf and edit as needed.
 # All keys except those marked required are optional; missing fields fall
 # back to the embedded default at config/default.toml, which the Rust
-# binary bakes in via include_str! and uses when /etc/tmp-watcher.toml is
+# binary bakes in via include_str! and uses when /etc/tmp-watcher.conf is
 # absent.
 #
 # Field documentation: docs/components/tmp-watcher.md.
@@ -58,7 +58,7 @@ ioc_list = "/etc/tmp-watcher.iocs"
 # the daemon appends one line per Unknown observation.
 proposed_iocs = "/etc/tmp-watcher.proposed.iocs"
 
-# ioc_archive_ref = "<path>"   # optional; set per-host in /etc/tmp-watcher.toml
+# ioc_archive_ref = "<path>"   # optional; set per-host in /etc/tmp-watcher.conf
 # when forensic auto-refresh is enabled. Do NOT set a concrete path
 # here — the embedded default stays None (host-agnostic embedded-default
 # rule: the runtime must not bake an operator-specific archive path
