@@ -60,7 +60,9 @@ proposed_iocs = "/etc/tmp-watcher.proposed.iocs"
 
 # ioc_archive_ref = "<path>"   # optional; set per-host in /etc/tmp-watcher.toml
 # when forensic auto-refresh is enabled. Do NOT set a concrete path
-# here — the embedded default stays None (per AR-011/AR-010).
+# here — the embedded default stays None (host-agnostic embedded-default
+# rule: the runtime must not bake an operator-specific archive path
+# into the build-time config).
 
 [allowlist]
 # Operator-curated allowlist (one glob per line).
@@ -80,6 +82,8 @@ alert_on_unknown = true
 
 # ntfy_url = "https://ntfy.sh/<your-topic>"   # optional; the operator
 # phones/chat receiver. Defaults to None in the embedded config
-# (per AR-011 / AR-010). When unset, the per-tick summary is
-# journal-only. See docs/contracts/webhook-payload.md for the contract.
+# (host-agnostic embedded-default rule: the runtime must not bake an
+# operator-specific NTFY URL into the build-time config). When unset,
+# the per-tick summary is journal-only. See
+# docs/contracts/webhook-payload.md for the contract.
 # Override per host via DEMON_ACTIONS_NTFY_URL.
