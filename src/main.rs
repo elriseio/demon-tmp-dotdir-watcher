@@ -73,20 +73,20 @@ fn print_usage() {
          Env overrides:\n\
            DEMON_LOG_LEVEL\n\
            DEMON_SHUTDOWN_TIMEOUT_SEC\n\
-           DEMON_PATHS__SCAN_MAXDEPTH\n\
-           DEMON_PATHS__SCAN_WINDOW_MINUTES\n\
-           DEMON_PATHS__SCAN_ROOTS (colon-separated)\n\
-           DEMON_PATHS__OVERLAY_SCAN_ENABLED\n\
-           DEMON_PATHS__OVERLAY_SCAN_ROOTS (colon-separated)\n\
-           DEMON_PATHS__OVERLAY_SCAN_MAXDEPTH\n\
-           DEMON_PATHS__OVERLAY_SCAN_DOTDIR_ONLY\n\
-           DEMON_IOC__IOC_LIST\n\
-           DEMON_IOC__IOC_ARCHIVE_REF\n\
-           DEMON_ALLOWLIST__ALLOWLIST\n\
-           DEMON_ALLOWLIST__MAX_FILES_PER_DIR\n\
-           DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH\n\
-           DEMON_ACTIONS__ALERT_ON_UNKNOWN\n\
-           DEMON_ACTIONS__NTFY_URL"
+           DEMON_PATHS_SCAN_MAXDEPTH\n\
+           DEMON_PATHS_SCAN_WINDOW_MINUTES\n\
+           DEMON_PATHS_SCAN_ROOTS (colon-separated)\n\
+           DEMON_PATHS_OVERLAY_SCAN_ENABLED\n\
+           DEMON_PATHS_OVERLAY_SCAN_ROOTS (colon-separated)\n\
+           DEMON_PATHS_OVERLAY_SCAN_MAXDEPTH\n\
+           DEMON_PATHS_OVERLAY_SCAN_DOTDIR_ONLY\n\
+           DEMON_IOC_IOC_LIST\n\
+           DEMON_IOC_IOC_ARCHIVE_REF\n\
+           DEMON_ALLOWLIST_ALLOWLIST\n\
+           DEMON_ALLOWLIST_MAX_FILES_PER_DIR\n\
+           DEMON_ACTIONS_QUARANTINE_ON_IOC_MATCH\n\
+           DEMON_ACTIONS_ALERT_ON_UNKNOWN\n\
+           DEMON_ACTIONS_NTFY_URL"
     );
 }
 

@@ -28,7 +28,7 @@ or transformation, side effect.
 | Cron / cadence | systemd timer (`OnUnitActiveSec=10min`) | external |
 | Persistent state | none (state is volatile only) | external |
 | Volatile state | /run/tmp-watcher/ (last-seen paths, cooldowns) | n/a |
-| Configuration | /etc/tmp-watcher.yaml (YAML; embedded default at `config/default.yaml`) | external |
+| Configuration | /etc/tmp-watcher.toml (TOML; embedded default at `config/default.toml`) | external |
 | Source-of-truth IOCs | /etc/tmp-watcher.iocs (one SHA-256 per line) | forensic archive |
 | Allowlist | /etc/tmp-watcher.allowlist (one glob per line) | external |
 | Logging | journald (`-t tmp-watcher`) + /var/log/tmp-watcher.log | external |
@@ -40,7 +40,7 @@ or transformation, side effect.
 | Component | Responsibility | Source of truth |
 |---|---|---|
 | `src/main.rs` | Boot, signal handling, top-level wiring | this folder |
-| `src/config.rs` | Load + validate YAML config; env overlay | ORIGIN.md "Configuration" |
+| `src/config.rs` | Load + validate TOML config; env overlay | ORIGIN.md "Configuration" |
 | `src/runtime.rs` | Main loop; shutdown coordination | ORIGIN.md "What it does" |
 | `src/subsystem.rs` | Walk + hash + match + quarantine | ORIGIN.md "What it does" |
 | `src/ioc.rs` | IOC list loader + SHA-256 matcher | ORIGIN.md "IOC list" |
@@ -114,8 +114,8 @@ Rust port lands:
    `PRIORITY=2` for CRITICAL, `PRIORITY=4` for WARNING.
 3. Preserve `/run/tmp-watcher/`, `/var/log/tmp-watcher.log`,
    `/etc/tmp-watcher.{allowlist,iocs}` paths. Config lives at
-   `/etc/tmp-watcher.yaml` (or the embedded default at
-   `config/default.yaml`); no other config file path is
+   `/etc/tmp-watcher.toml` (or the embedded default at
+   `config/default.toml`); no other config file path is
    read by the Rust port.
 4. Preserve the `chmod 000` quarantine side effect (no `rm -rf`).
 5. Run a shadow week: bash script remains active, Rust binary

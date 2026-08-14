@@ -8,7 +8,7 @@ summary: "Boundary contract for the tmp-watcher IOC list + allowlist semantics. 
 source_artifacts:
   - ORIGIN.md
   - ARCHITECTURE.md
-  - config/default.yaml
+  - config/default.toml
   - docs/components/tmp-watcher.md
 tags: [contract, tmp_watcher, ioc_list, allowlist, glob, sha256]
 ---
@@ -222,7 +222,7 @@ systemd-private-*
 
 - `ORIGIN.md` § "Allowlist" — operator-facing description
 - `ORIGIN.md` § "IOC list" — operator-facing description
-- `config/default.yaml` — paths to the live config files (this
+- `config/default.toml` — paths to the live config files (this
   daemon does NOT deploy them; the systemd unit places them at
   the canonical paths on install)
 - `docs/components/tmp-watcher.md` — module map (`ioc` /

@@ -46,7 +46,7 @@ The NTFY push side effect is wired through
 function calls `output::ntfy_push(self.cfg.actions.ntfy_url
 .as_deref(), …)`; the URL is read from `actions.ntfy_url` in
 `Config` (default `None`, operator-supplied via env or
-`/etc/tmp-watcher.yaml`). When unset, the IOC-match alert goes
+`/etc/tmp-watcher.toml`). When unset, the IOC-match alert goes
 to the journal and the log file only; when set, the per-tick
 summary is POSTed alongside. See
 [NTFY alert channel](#ntfy-alert-channel) below for the env
@@ -55,7 +55,7 @@ override + config field + contract doc.
 **NTFY alert channel** — wired (since v0.2.0, DE-018..DE-022
 wave). Set `DEMON_ACTIONS__NTFY_URL=https://ntfy.sh/<topic>`
 or `actions.ntfy_url: "https://ntfy.sh/<topic>"` in
-`/etc/tmp-watcher.yaml`. After every tick the daemon POSTs
+`/etc/tmp-watcher.toml`. After every tick the daemon POSTs
 the per-tick summary with NTFY headers (`Title`, `Priority`,
 `Tags`) and `text/plain` body per
 [`docs/contracts/webhook-payload.md`](docs/contracts/webhook-payload.md).
@@ -106,15 +106,15 @@ omitted, the embedded default config is used.
 demon-tmp-dotdir-watcher --help
 
 # 2. Validate a config file (no scanning, no side effects)
-demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.yaml
+demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.toml
 
 # 3. One polling tick, no quarantine side effect (operators use
 #    this to sanity-check config + scan coverage + IOC matching
 #    before activating the daemon)
-demon-tmp-dotdir-watcher --dry-run /etc/tmp-watcher.yaml
+demon-tmp-dotdir-watcher --dry-run /etc/tmp-watcher.toml
 
 # 4. Production run driven by systemd timer
-demon-tmp-dotdir-watcher /etc/tmp-watcher.yaml
+demon-tmp-dotdir-watcher /etc/tmp-watcher.toml
 ```
 
 Flags:
@@ -132,9 +132,9 @@ without editing the config file (see [Configuration](#configuration)).
 
 ## Configuration
 
-The daemon reads a single YAML file at the path given on the
+The daemon reads a single TOML file at the path given on the
 command line. When no path is given, the embedded default
-(`config/default.yaml`, baked into the binary at build time)
+(`config/default.toml`, baked into the binary at build time)
 is used. Any missing section falls back to the embedded
 default; only the keys you actually set override.
 
@@ -147,31 +147,30 @@ Fields the daemon validates on load:
 
 A reference config matching the embedded default:
 
-```yaml
-# /etc/tmp-watcher.yaml
+```toml
+# /etc/tmp-watcher.toml
 
-log:
-  level: info
+log = { level = "info" }
 
-runtime:
-  shutdown_timeout_sec: 30
+[runtime]
+shutdown_timeout_sec = 30
 
-paths:
-  scan_roots: ["/tmp", "/home", "/var/tmp"]
-  scan_maxdepth: 3
-  scan_window_minutes: 1440
+[paths]
+scan_roots = ["/tmp", "/home", "/var/tmp"]
+scan_maxdepth = 3
+scan_window_minutes = 1440
 
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-  # ioc_archive_ref: "<path>"   # optional; set per-host in /etc/tmp-watcher.yaml when forensic auto-refresh is enabled
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+# ioc_archive_ref = "<path>"   # optional; set per-host in /etc/tmp-watcher.toml when forensic auto-refresh is enabled
 
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
 
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 ```
 
 The journal tag (`tmp-watcher`), the log file destination
@@ -200,12 +199,12 @@ use double-underscore (`__`) as the section separator:
 | `DEMON_ACTIONS__NTFY_URL` | `actions.ntfy_url` (URL string; per-tick summary emit) |
 
 An env override that fails to parse is logged at WARN and
-ignored; the YAML value (or the embedded default) is kept.
+ignored; the TOML value (or the embedded default) is kept.
 
 Validate after any edit:
 
 ```bash
-demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.yaml
+demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.toml
 ```
 
 ## IOC list
@@ -279,8 +278,8 @@ The daemon is timer-driven. The stub unit + timer ship in
 
 ```bash
 # One-shot install: build + ship binary, units, and a fresh
-# /etc/tmp-watcher.yaml if one is not already present. The
-# /etc/tmp-watcher.yaml copy is idempotent (preserves operator
+# /etc/tmp-watcher.toml if one is not already present. The
+# /etc/tmp-watcher.toml copy is idempotent (preserves operator
 # edits on re-install). Per the daemon's "proposed" status, the
 # systemd units are installed but NOT enabled — first-deployment
 # enablement is operator-side.
@@ -299,7 +298,7 @@ Documentation=file:<repo>/README.md
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/demon-tmp-dotdir-watcher /etc/tmp-watcher.yaml
+ExecStart=/usr/local/bin/demon-tmp-dotdir-watcher /etc/tmp-watcher.toml
 WorkingDirectory=/var/lib/tmp-watcher
 StateDirectory=tmp-watcher
 LogsDirectory=tmp-watcher
@@ -337,19 +336,19 @@ WantedBy=timers.target
 ```
 
 One-time install on the target host (assumes you have
-`tmp-watcher.yaml`, `tmp-watcher.allowlist`, and
+`tmp-watcher.toml`, `tmp-watcher.allowlist`, and
 `tmp-watcher.iocs` already authored somewhere on the build
 host — copy them in via your normal config-management path):
 
 ```bash
 sudo install -m 0755 target/release/demon-tmp-dotdir-watcher \
                     /usr/local/bin/demon-tmp-dotdir-watcher
-sudo install -m 0644 tmp-watcher.yaml      /etc/tmp-watcher.yaml
+sudo install -m 0644 tmp-watcher.toml      /etc/tmp-watcher.toml
 sudo install -m 0644 tmp-watcher.allowlist /etc/tmp-watcher.allowlist
 sudo install -m 0644 tmp-watcher.iocs      /etc/tmp-watcher.iocs
 
 # sanity-check that the config the daemon will see parses + validates
-demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.yaml
+demon-tmp-dotdir-watcher --validate-config /etc/tmp-watcher.toml
 
 # activate the poll timer
 sudo systemctl daemon-reload
@@ -437,7 +436,7 @@ above, so the two documents stay in sync.
 demon-tmp-dotdir-watcher/
 ├── Cargo.toml            # crate manifest, deps, MSRV 1.74
 ├── config/
-│   └── default.yaml      # embedded default config (bake-in via include_str!)
+│   └── default.toml      # embedded default config (bake-in via include_str!)
 ├── src/
 │   ├── main.rs           # CLI parser, boot, signal handling
 │   ├── config.rs         # YAML loader + validation + env overlay
@@ -452,7 +451,7 @@ demon-tmp-dotdir-watcher/
 │   └── runtime.rs        # walk + classify + quarantine e2e
 ├── contrib/
 │   ├── config/
-│   │   └── tmp-watcher.yaml.example   # operator-facing example config (YAML)
+│   │   └── tmp-watcher.toml.example   # operator-facing example config (TOML)
 │   └── systemd/
 │       ├── tmp-watcher.service        # Type=oneshot stub per invariant 2
 │       └── tmp-watcher.timer          # OnUnitActiveSec=10min

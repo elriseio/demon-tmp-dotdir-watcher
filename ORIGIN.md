@@ -40,35 +40,34 @@ Every 10 min:
 
 ## Configuration
 
-The runtime config is a **YAML** file loaded by `src/config.rs`
-via `serde_yaml::from_str`. The embedded default lives at
-`config/default.yaml`; an operator override file (path passed to
+The runtime config is a **TOML** file loaded by `src/config.rs`
+via `toml::from_str`. The embedded default lives at
+`config/default.toml`; an operator override file (path passed to
 `load_config`) replaces the embedded default field-for-field.
 
-```yaml
-# /etc/tmp-watcher.yaml  (illustrative; the daemon's --config flag points here)
-log:
-  level: info
+```toml
+# /etc/tmp-watcher.toml  (illustrative; the daemon's --config flag points here)
+log = { level = "info" }
 
-runtime:
-  shutdown_timeout_sec: 30
+[runtime]
+shutdown_timeout_sec = 30
 
-paths:
-  scan_roots: ["/tmp", "/home", "/var/tmp"]
-  scan_maxdepth: 3                  # last 24h window
-  scan_window_minutes: 1440
+[paths]
+scan_roots = ["/tmp", "/home", "/var/tmp"]
+scan_maxdepth = 3                  # last 24h window
+scan_window_minutes = 1440
 
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-  # ioc_archive_ref: "<path>"   # omit unless forensic auto-refresh is enabled; set per-host in /etc/tmp-watcher.yaml
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+# ioc_archive_ref = "<path>"   # omit unless forensic auto-refresh is enabled; set per-host in /etc/tmp-watcher.toml
 
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
 
-actions:
-  quarantine_on_ioc_match: true     # chmod 000 the matched directory
-  alert_on_unknown: true            # WARNING for non-allowlist dotdirs
+[actions]
+quarantine_on_ioc_match = true     # chmod 000 the matched directory
+alert_on_unknown = true            # WARNING for non-allowlist dotdirs
 ```
 
 The runtime reads **no `[output]` section today**: NTFY push is
@@ -123,7 +122,7 @@ The daemon does NOT auto-add new directories to the allowlist. Unknown dotdirs a
 ## Implementation
 
 - Single bash script (~80 lines) at `/usr/local/bin/tmp-watcher`
-- 3 config files (`/etc/tmp-watcher.yaml` or embedded default,
+- 3 config files (`/etc/tmp-watcher.toml` or embedded default,
   `/etc/tmp-watcher.allowlist`, `/etc/tmp-watcher.iocs`)
 - systemd service + timer (oneshot, 10-minute polling)
 - `/run/tmp-watcher/` runtime state directory

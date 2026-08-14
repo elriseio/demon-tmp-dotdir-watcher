@@ -118,14 +118,14 @@ escalate immediately.
    demon-tmp-dotdir-watcher --dry-run
    ```
 4. If manual run fails with a config error, fix the YAML
-   config (default at `config/default.yaml`; operator override
-   at `/etc/tmp-watcher.yaml` if present) and retry. No
+   config (default at `config/default.toml`; operator override
+   at `/etc/tmp-watcher.toml` if present) and retry. No
    other config file path is read by the Rust port.
 
 **Escalation:** if the daemon refuses to start after a config
 fix, capture the full journal output, the resolved config (run
 `demon-tmp-dotdir-watcher --print-config` if available, else
-copy `/etc/tmp-watcher.yaml` plus the embedded default), and
+copy `/etc/tmp-watcher.toml` plus the embedded default), and
 the contents of `/etc/tmp-watcher.{allowlist,iocs}` and
 escalate.
 
@@ -159,7 +159,7 @@ positive; the daemon has `chmod 000` the directory.
 
 **Triage:** expected on non-Docker hosts. The overlay scan is
 opt-in via `paths.overlay_scan_enabled`; set to `false` in
-`/etc/tmp-watcher.yaml` to silence the INFO log.
+`/etc/tmp-watcher.toml` to silence the INFO log.
 
 **Escalation:** none — the host scan continues normally.
 
@@ -185,7 +185,7 @@ cycle. The host scan still runs; only the overlay scan is skipped.
    paths:
      overlay_scan_enabled: false
    ```
-   in `/etc/tmp-watcher.yaml`. Host scan still catches the host-side
+   in `/etc/tmp-watcher.toml`. Host scan still catches the host-side
    pattern; container-resident kits are missed (documented in
    STATUS.md § "Risks" item 5).
 
@@ -263,7 +263,7 @@ shape, headers, body, severity mapping, examples) is the canonical
 3. If failures persist, common operator-side fixes:
    - Rotate the NTFY topic (`actions.ntfy_url`) if the upstream
      topic was revoked or rate-limited.
-   - Verify `/etc/tmp-watcher.yaml` for typos in `actions.ntfy_url`
+   - Verify `/etc/tmp-watcher.toml` for typos in `actions.ntfy_url`
      (the field accepts any string; no URL validation by design
      per the contract doc).
    - Check firewall egress for the daemon's outbound HTTPS —
@@ -289,7 +289,7 @@ chmod-000 path does not error (it must be a no-op).
 The daemon does not support SIGHUP. To pick up a config change:
 
 ```bash
-$EDITOR /etc/tmp-watcher.yaml      # or the embedded config/default.yaml
+$EDITOR /etc/tmp-watcher.toml      # or the embedded config/default.toml
 demon-tmp-dotdir-watcher --validate-config
 systemctl start tmp-watcher.service
 ```
@@ -329,8 +329,8 @@ under `${REPORT_DIR}/<date>-tmp-watcher-ioc-<hash>.md`
 with the matched path, hash, and quarantine action.
 
 `${REPORT_DIR}` is the operator-configured report directory; see
-`config/default.yaml` § `report_dir` for the canonical default and
-override it per host via `/etc/tmp-watcher.yaml` or the
+`config/default.toml` § `report_dir` for the canonical default and
+override it per host via `/etc/tmp-watcher.toml` or the
 `DEMON_TMP_DOTDIR_WATCHER_REPORT_DIR` environment variable. The
 daemon itself does not write these files automatically; the
 audit / incident artifacts are produced by the operator following
