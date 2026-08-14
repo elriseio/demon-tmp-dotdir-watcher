@@ -19,8 +19,8 @@ aligned with `demon-docker-janitor`'s `docs/contracts/webhook-payload.md`
 for cross-daemon parity.
 
 The daemon does NOT construct the URL. `actions.ntfy_url` is
-operator-supplied via `/etc/tmp-watcher.yaml` or
-`DEMON_ACTIONS__NTFY_URL` (per DE-019).
+operator-supplied via `/etc/tmp-watcher.toml` or
+`DEMON_ACTIONS_NTFY_URL`.
 
 ## Request shape
 
@@ -162,7 +162,7 @@ duration_seconds=2
    notification system is in use. No URL construction, no
    path suffix, no auth header added by the daemon.
 5. **Severity defaults when `actions.ntfy_url` is unset.** With
-   `actions.ntfy_url = None` (the embedded default per AR-011),
+   `actions.ntfy_url = None` (the host-agnostic embedded default),
    the post-tick summary path short-circuits and no HTTP traffic
    is generated; the per-tick `info!(... 'runtime: tick summary')`
    journal line is the only emit.

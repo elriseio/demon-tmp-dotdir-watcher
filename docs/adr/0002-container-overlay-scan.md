@@ -17,8 +17,7 @@ source_artifacts:
   - docs/components/tmp-watcher.md (module map)
   - docs/contracts/tmp-watcher-allowlist-ioc.md (existing IOC + allowlist contract; extended)
   - docs/adr/0001-tmp-watcher-learning-model.md (precedent: 3-task decomposition, bounded scope)
-  - Issues/open/architect/AR-016_container_scan_overlay.md (origin proposal)
-  - Issues/done/developer/DE-006_implement_overlay_scan.md (implementation task; closed 2026-08-13)
+  - this ADR's origin proposal and implementation task are in git history (search git log for the ADR's commit hash)
 tags: [adr, tmp_watcher, container, overlay, docker, dotdir, threat_model, elrise_incident]
 ---
 
@@ -31,7 +30,7 @@ tags: [adr, tmp_watcher, container, overlay, docker, dotdir, threat_model, elris
 | Authors | architect (operator-approved) |
 | Supersedes | (none) |
 | Implements | `docs/architecture/STATUS.md` "Risks" item 2 (expanded) |
-| Decomposes into | DE-006 (developer task; single bounded commit) |
+| Decomposes into | one developer task; single bounded commit (see git log for the commit that closed this ADR) |
 
 ## Context
 
@@ -160,7 +159,7 @@ have to re-derive it.
   Match → skip (legitimate).
 - **Filter 3 — unknown WARNING**: candidate passed Filters 1 and 2
   without a match. Emits `Decision::Unknown` → journal WARNING +
-  `/etc/tmp-watcher.proposed.iocs` (per AR-013 learning pipeline).
+  `/etc/tmp-watcher.proposed.iocs` (the proposer / learning pipeline).
   Operator review via `tmp-watcher-promote` is the only path to
   promote a candidate into the live IOC list.
 
@@ -173,7 +172,7 @@ have to re-derive it.
   list.
 - **Strategy C** (Strategy A + name-pattern classifier as a fourth
   filter): adds detection-by-name heuristically above hash matching.
-  Deferred to follow-up; AR-013's learning pipeline gradually
+  Deferred to follow-up; the proposer / learning pipeline gradually
   produces a name-pattern signal as `proposed.iocs` accumulates.
 
 The three-stage filter is the same pattern the host-side scan uses
@@ -371,26 +370,26 @@ Required (per `TASK_PLANNING_GUIDE.md`):
 | Invariant 5 (failures are loud) | Overlay scan failures log WARNING/CRITICAL with structured fields; never silently skip |
 | Invariant 6 (bounded walk scope) | `overlay_scan_maxdepth` ≤ 3; `overlay_scan_dotdir_only` bounds the candidate set per layer; per-layer timeout inherited from existing walker |
 | Invariant 7 (reversible quarantine) | `chmod 0o000`; never `rm -rf`; `chmod 0o700` reverses |
-| ORIGIN.md "Auto-fix actions" | Overlay scan does not auto-add to IOC list; relies on existing `Decision::Unknown` → proposed.iocs pipeline (AR-013) |
+| ORIGIN.md "Auto-fix actions" | Overlay scan does not auto-add to IOC list; relies on existing `Decision::Unknown` → proposed.iocs pipeline |
 | `loopback only` boundary | Overlay scan is host filesystem read; no network call |
 | `no inbound connections` | Same — scanner does not listen |
 | `no disk-secret reads` | Overlay scan reads public filesystem paths only |
 | `existing IOC + allowlist contract` | Override adds config keys; existing matcher behaviour is unchanged |
-| **Production capability set (new constraint)** | The daemon runs on tmp-vps with a minimal hardening-friendly `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). DE-006 MUST NOT introduce new capability requirements — the overlay scan must work with the existing `CAP_DAC_READ_SEARCH` capability (sufficient for `std::fs::read_dir` on `/var/lib/docker/overlay2` on stock Docker installs). If a future feature requires more, the change is a separate ADR + a separate `systemd` unit diff, not a silent extension. Per `Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md` (2026-08-13 follow-up): the upstream `CapabilityBoundingSet=` (empty) recipe clears `CAP_DAC_READ_SEARCH` and breaks root readability of mode-0700 directories; the minimal-cap set is the production baseline. |
+| **Production capability set (new constraint)** | The daemon runs on tmp-vps with a minimal hardening-friendly `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The overlay scan MUST NOT introduce new capability requirements — it must work with the existing `CAP_DAC_READ_SEARCH` capability (sufficient for `std::fs::read_dir` on `/var/lib/docker/overlay2` on stock Docker installs). If a future feature requires more, the change is a separate ADR + a separate `systemd` unit diff, not a silent extension. The minimal-cap set is the production baseline; the upstream `CapabilityBoundingSet=` (empty) recipe clears `CAP_DAC_READ_SEARCH` and breaks root readability of mode-0700 directories. |
 
 ## Compliance matrix
 
 | Requirement | Satisfied by |
 |---|---|
-| Scan inside containers | DE-006 overlay walker |
-| No docker.sock | Static test in DE-006 |
+| Scan inside containers | Overlay walker in `src/overlay.rs` |
+| No docker.sock | Static test in `src/overlay.rs::tests` |
 | No privilege escalation | Host fs read only |
 | `.*` only scope | `overlay_scan_dotdir_only: true` config + walker filter |
 | Reversible quarantine | `chmod 0o000` (unchanged) |
 | Bounded walk scope | `overlay_scan_maxdepth` ≤ 3 + dotdir filter |
 | Detection latency target (10 min) | Overlay scan runs in same poll cycle as host scan |
-| Decomposition into ≤ 1 commit developer task | DE-006 |
-| AGENT_ISSUE_NAMING_CONVENTIONS.md | All cross-references use `AR-016`, `DE-006` |
+| Decomposition into ≤ 1 commit developer task | Single bounded commit; see git log |
+| AGENT_ISSUE_NAMING_CONVENTIONS.md | All cross-references use the role-code prefix convention |
 | AGENT_OUTPUT_SANITIZATION_POLICY.md | No absolute paths in this ADR; references use `<repo_root>` semantics |
 | Domain invariant (Azazel footprint pattern) | Target pattern is identical to host scan; overlay is just a different mount |
 
@@ -413,7 +412,7 @@ Required (per `TASK_PLANNING_GUIDE.md`):
    hosts (no Docker) would lose detection entirely. Host scan is
    the always-on backbone; overlay scan is additive.
 
-## Open questions for operator (carried into DE-006 implementation)
+## Open questions for operator
 
 1. **`overlay_scan_enabled` default**. This ADR proposes default
    `true` because containers are now standard; an operator on a
@@ -452,23 +451,18 @@ Required (per `TASK_PLANNING_GUIDE.md`):
   контейнеры docker" + "ответаы: сканировать только .*".
 - `Computer/reports/2026-08-09-elrise-backend-container-compromise.md`
   — incident timeline, evidence, and root-cause analysis.
-- `Issues/open/architect/AR-016_container_scan_overlay.md` —
-  origin proposal; this ADR codifies the decision. The proposal
-  remains in `Issues/open/architect/` per
-  `AGENT_ISSUE_ROUTING_AND_LOCATION.md` Rule 4 (proposal-stage
-  exception); it is the umbrella for the now-closed
-  `DE-006_implement_overlay_scan.md`.
-- `Issues/done/developer/DE-006_implement_overlay_scan.md` —
-  implementation task (closed 2026-08-13; bounded single commit;
-  DoD-Report `Status: CLOSED (full closure)`).
+- This ADR's origin proposal and implementation task are in git
+  history (search git log for the commit hash that closed this
+  ADR; the umbrella proposal was a local queue entry that has
+  since been archived and the single bounded commit landed on
+  2026-08-13 with `Status: CLOSED (full closure)`).
 - `docs/adr/0001-tmp-watcher-learning-model.md` — precedent for
   3-task decomposition and bounded-scope policy.
 - `ARCHITECTURE.md` § "Invariants" (1-7) — preserved.
 - `ORIGIN.md` § "Auto-fix actions" — preserved.
 - `docs/architecture/STATUS.md` § "Risks" item 2 — extended.
-- `Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md`
-  (2026-08-13 follow-up) — production deployment context: the
-  daemon runs with a minimal hardening-friendly
+- Production deployment context (2026-08-13 sysadmin follow-up):
+  the daemon runs with a minimal hardening-friendly
   `CapabilityBoundingSet=` (replaced upstream empty set after EACCES
   on `/home/deploy/.docker` and `/home/deploy/.ssh`). Production
   expects 2 candidates per tick. The overlay scan must work with

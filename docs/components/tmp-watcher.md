@@ -103,9 +103,9 @@ in `docs/contracts/tmp-watcher-allowlist-ioc.md`. That contract is
 the source of truth for both the bash reference impl and the Rust
 port; if they drift, the contract is right and the impl is wrong.
 
-## Webhook channel (DE-018..DE-022)
+## Webhook channel
 
-DE-018..DE-022 introduce the operator-supplied NTFY post-tick-summary
+Introduced in v0.2.0: the operator-supplied NTFY post-tick-summary
 emit. The producer is `output`; the canonical contract doc is
 `docs/contracts/webhook-payload.md`.
 

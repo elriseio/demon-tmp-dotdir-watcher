@@ -6,7 +6,7 @@ applicable_roles: [all]
 version: 1
 summary: "ADR for the tmp-watcher learning model. Decomposes the operator-approved AR-012 proposal into three implementation tasks (AR-013 auto-promotion, AR-014 cross-host correlation, AR-015 empty-IOC-list baseline) and codifies the empty/missing IOC list as a first-class bootstrap state rather than a CRITICAL failure. Inherited constraints from ARCHITECTURE.md invariants 1-7 and ORIGIN.md 'Auto-fix actions' are preserved."
 source_artifacts:
-  - docs/architecture/STATUS.md § "Last Updated" (AR-012 closed by operator decision)
+  - docs/architecture/STATUS.md § "Last Updated" (AR-012 closed by operator decision; see git log for the closure commit)
   - docs/architecture/STATUS.md § "Risks (carry-forward into the implementation wave)" item 2
   - ORIGIN.md § "What it does" step 5
   - ORIGIN.md § "Outstanding issues" → "Cross-host IOC sync"
@@ -16,8 +16,9 @@ source_artifacts:
   - docs/contracts/tmp-watcher-allowlist-ioc.md § "Loader semantics" (docs↔code drift on missing IOC list)
   - src/runtime.rs::Runtime::new (lines 62-74 — current graceful-degrade path)
   - src/ioc.rs::Matcher::empty (line 33 — the baseline empty Matcher)
-  - config/default.yaml (no `ioc.ioc_list` requirement at boot)
-  - Issues/open/scout/briefs/SC-RUST-001..011 (Rust best-practice briefs to consult during implementation)
+  - config/default.toml (no `ioc.ioc_list` requirement at boot)
+  - Rust best-practice briefs consulted during implementation; the
+    briefs themselves are not durable contract artefacts
 tags: [adr, tmp_watcher, learning, ioc, empty_list, first_start, cross_host, auto_promotion, scout_briefs]
 ---
 
@@ -129,11 +130,13 @@ Cross-cutting decisions:
    of `/etc/tmp-watcher.iocs`. This keeps invariant 7 ("quarantine
    is reversible") and the "operator decides" posture intact.
 
-5. **Every task must consult `Issues/open/scout/briefs/SC-RUST-001..011`.**
-   The 11 briefs cover idioms/ownership, error handling, async,
-   API design/clippy, performance/unsafe, testing, concurrency,
+5. **Every task must consult Rust best-practice briefs.** The 11
+   briefs cover idioms/ownership, error handling, async, API
+   design/clippy, performance/unsafe, testing, concurrency,
    macros, async deep-dive, cargo workspaces, and unsafe/FFI.
-   Tasks pick the briefs that apply to their layer.
+   Tasks pick the briefs that apply to their layer (the briefs
+   themselves are not durable contract artefacts; see the scout
+   skill catalogue for the canonical list).
 
 6. **Task keys MUST NOT appear in code comments.** Developer
    writes `git commit -m "AR-013: ..."` style references in
@@ -216,7 +219,8 @@ Negative:
 - docs/contracts/tmp-watcher-allowlist-ioc.md — to be updated by AR-015
 - docs/architecture/STATUS.md § "Risks" — items 2 and 3
 - docs/architecture/ROADMAP.md — to be updated with the new wave
-- Issues/open/architect/AR-012_define_learning_model.md — superseded by this ADR
-- Issues/open/scout/briefs/SC-RUST-001..011 — Rust best-practice briefs
+- The proposal that this ADR codifies is in git history; the local
+  queue entry has been archived since the ADR closed
+- Rust best-practice briefs consulted during implementation
 - docs/agent_context/AGENT_ISSUE_NAMING_CONVENTIONS.md — filename shape
 - docs/agent_context/TASK_PLANNING_GUIDE.md — small-task heuristic

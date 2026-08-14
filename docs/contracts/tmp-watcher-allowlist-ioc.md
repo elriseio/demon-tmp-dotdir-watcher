@@ -230,7 +230,7 @@ systemd-private-*
 - `ARCHITECTURE.md` § Failure modes — "IOC list missing",
   "Allowlist missing"
 
-## Cross-host sink contract (AR-014)
+## Cross-host sink contract
 
 The cross-host correlation sidecar
 (`demon-tmp-watcher-cross-host`) is a separate daemon that
@@ -302,7 +302,7 @@ pub struct ProposalEntry {
 
 The cross-host sidecar ships with a `NullSink` placeholder that
 returns empty observations. The operator chooses a concrete
-`Sink` implementation based on AR-014's open questions:
+`Sink` implementation from the standard transport set:
 
 - HTTP POST to a shared endpoint on `iton-nest`
 - File drop on a shared filesystem
@@ -317,7 +317,7 @@ NOT open outbound connections to non-loopback addresses).
 
 The Aggregator writes to the proposal file with the same
 10 MB / 30 days retention policy as the per-host detection
-daemon's `Proposer` (AR-013). The file is the same
+daemon's `Proposer`. The file is the same
 `/etc/tmp-watcher.proposed.iocs`; both writers honor the same
 retention contract.
 
@@ -344,7 +344,7 @@ Example:
 2026-08-12T18:30:00Z  e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  .r.rpk  /tmp/.r.rpk  cross_host_count=3
 ```
 
-The detection daemon's entries (AR-013) do NOT carry the
+The detection daemon's entries do NOT carry the
 `cross_host_count=` suffix; absence means `cross_host_count=1`
 (single-host observation).
 
@@ -397,7 +397,7 @@ Example:
   candidate entries.
 - The writer is **lock-free single-writer** (the detection
   daemon). If a second writer ever appears, the writer MUST
-  add an `flock(LOCK_EX)` per `Issues/open/scout/briefs/SC-RUST-007`.
+  add an `flock(LOCK_EX)` to serialize appends.
 
 ### Dedup semantics
 

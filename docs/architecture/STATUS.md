@@ -72,7 +72,7 @@ Architectural goal (current wave):
 | Status doc | **drafted** | this file |
 | Roadmap doc | **drafted** | `docs/architecture/ROADMAP.md` |
 | Component description | **drafted** | `docs/components/tmp-watcher.md` |
-| Task decomposition | **8 tasks** queued for `developer` | `Issues/open/developer/AR-001..AR-008` |
+| Task decomposition | **8 tasks** queued for `developer` | see the active `Issues/open/developer/` queue + git log for the per-wave AR-### history |
 | Production deploy | **not deployed** | daemon is "proposed" in `README.md` "Current state" |
 
 ## Architect Cycles
@@ -82,8 +82,8 @@ Architectural goal (current wave):
 | Spec-vs-code reconciliation | per implementation commit | updates to `ARCHITECTURE.md` / `docs/components/tmp-watcher.md` if invariants drift |
 | Runbook sync | per new failure-mode observed | append to `RUNBOOK.md` "Common failure modes" |
 | ADR seeding | per cross-cutting decision | `docs/adr/NNNN-<slug>.md` |
-| Task decomposition | per wave plan | `Issues/open/developer/AR-<NNN>_<slug>.md` + `memory.record_handoff` |
-| Queue hygiene | once per session | verify `Issues/open/<role>/` matches routing field per `AGENT_ISSUE_ROUTING_AND_LOCATION.md` |
+| Task decomposition | per wave plan | `Issues/open/<role>/<ROLE_CODE>-<NNN>_<slug>.md` + `memory.record_handoff` |
+| Queue hygiene | once per session | verify `Issues/open/<role>/` matches the per-issue routing field per `AGENT_ISSUE_ROUTING_AND_LOCATION.md` |
 
 ## Captured Trade-offs
 
@@ -141,8 +141,8 @@ Architectural goal (current wave):
    + invariant-5 re-tightening (DE-021), `httpmock` round-trip
    test + README / RUNBOOK cross-reference (DE-022). See the
    "Last Updated" entry for `wave-build-config-and-webhook-008`
-   above and `Issues/done/developer/DE-018_*..DE-022_*` for the
-   closing lineage.
+   above and the git history of the closing commits for the
+   per-task lineage.
 
 ## Last Updated
 
@@ -196,7 +196,7 @@ Architectural goal (current wave):
   bounded developer task DE-006 (one commit, ≤ 5 files; new module
   `src/overlay.rs` + thin extensions to subsystem/config).
 
-  **DE-006 closed** (per `Issues/done/developer/DE-006_implement_overlay_scan.md`):
+  **DE-006 closed** (per the closing commit on 2026-08-13):
   82 tests pass (10 ADR-0002 § 9 tests + 9 cross-host + 7 smoke +
   65 unit + 1 runtime); `cargo clippy --all-targets` clean; runtime
   integration verified via `--dry-run` against an overlay fixture.
@@ -207,8 +207,7 @@ Architectural goal (current wave):
   item 0. Strategies B (name-snapshot denylist only) and C (Strategy A
   + name-pattern classifier) are explicitly rejected on 2026-08-13.
 
-  **Production deployment context (2026-08-13, per
-  `Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md`):**
+  **Production deployment context (2026-08-13):**
   the daemon runs on tmp-vps with a minimal hardening-friendly
   `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE
   CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The upstream
@@ -280,16 +279,15 @@ Architectural goal (current wave):
      proposal file annotated with `cross_host_count=N`.
 
   Design record: `docs/adr/0001-tmp-watcher-learning-model.md`.
-  Umbrella: `Issues/open/developer/AR-012_define_learning_model.md`
-  (routing moved from `architect` → `developer` per operator
-  approval). New wave: `wave-learning-baseline-005` recorded in
+  Umbrella proposal has been archived (routing moved from
+  `architect` → `developer` per operator approval). New wave:
+  `wave-learning-baseline-005` recorded in
   `docs/architecture/ROADMAP.md`.
 
-  All three tasks MUST consult
-  `Issues/open/scout/briefs/SC-RUST-001..011` before writing
-  code; all three tasks MUST NOT embed task keys (AR-013,
-  AR-014, AR-015) inside `//` or `/* */` comments inside `.rs`
-  files.
+  All three tasks MUST consult Rust best-practice briefs
+  before writing code; all three tasks MUST NOT embed task keys
+  (AR-013, AR-014, AR-015) inside `//` or `/* */` comments inside
+  `.rs` files.
 
 - 2026-08-12 — **AR-009 closed (Option A: docs-only reconciliation).**
   Resolved the docs-vs-code drift on two points:
@@ -337,12 +335,12 @@ Architectural goal (current wave):
   `push_ntfy_for_match`) remains a one-line follow-up; it
   is **not** done by AR-009.
 
-  See `Issues/done/developer/AR-009_reconcile_docs_yaml_config_and_ntfy.md`
-  for the DoD report.
+  See the AR-009 closure commit (per git log) for the DoD report.
 
 - 2026-08-10 — Initial architect onboarding for
   `demon-tmp-dotdir-watcher`. Specs read; placeholder scaffold
   inventoried; 8 bounded developer tasks queued
-  (`Issues/open/developer/AR-001..AR-008`); STATUS + ROADMAP +
-  component + contract docs drafted. Source-of-truth relations
-  recorded via `memory.record_architecture_relation`.
+  (see git log for the initial wave of AR-### commits);
+  STATUS + ROADMAP + component + contract docs drafted.
+  Source-of-truth relations recorded via
+  `memory.record_architecture_relation`.
