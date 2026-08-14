@@ -20,7 +20,7 @@ tags: [roadmap, daemon, tmp_watcher, rust_port, waves, prod_deployment, overlay_
 
 ## Active wave — `wave-hardening-followup-007` (post-overlay-scan production reality)
 
-After the overlay-scan closure and the tmp-vps production deployment
+After the overlay-scan closure and the production deployment
 (2026-08-13 sysadmin follow-up), one operational follow-up surfaces:
 
 | Task | Title | Layer | Owner | Depends on |
@@ -87,7 +87,7 @@ Verification per the overlay-scan closure DoD report:
 integration verified via `--dry-run` against an overlay fixture.
 Production deployment context recorded in the sysadmin
 2026-08-13 follow-up commit (capability set updated, 2 candidates
-per tick on tmp-vps).
+per tick in production).
 
 ### `wave-learning-baseline-005` (closed 2026-08-12)
 

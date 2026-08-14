@@ -208,13 +208,14 @@ Architectural goal (current wave):
   + name-pattern classifier) are explicitly rejected on 2026-08-13.
 
   **Production deployment context (2026-08-13):**
-  the daemon runs on tmp-vps with a minimal hardening-friendly
+  the daemon runs in production with a minimal hardening-friendly
   `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE
   CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The upstream
   `CapabilityBoundingSet=` (empty) recipe was identified as breaking
   root readability of mode-0700 directories on 2026-08-13 and replaced.
   Verification: `CapEff` = `000001ffffffffff` (post-fix); 2 candidates
-  per tick (`/home/deploy/.docker` and `/home/deploy/.ssh`).
+  per tick on the install user's `.docker` and `.ssh` directories
+  in their home.
 
   **Cross-cutting constraint** added to ADR-0002 § "Constraints preserved":
   "no new capability requirements." DE-006's overlay walker must work

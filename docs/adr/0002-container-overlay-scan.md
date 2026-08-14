@@ -375,7 +375,7 @@ Required (per `TASK_PLANNING_GUIDE.md`):
 | `no inbound connections` | Same — scanner does not listen |
 | `no disk-secret reads` | Overlay scan reads public filesystem paths only |
 | `existing IOC + allowlist contract` | Override adds config keys; existing matcher behaviour is unchanged |
-| **Production capability set (new constraint)** | The daemon runs on tmp-vps with a minimal hardening-friendly `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The overlay scan MUST NOT introduce new capability requirements — it must work with the existing `CAP_DAC_READ_SEARCH` capability (sufficient for `std::fs::read_dir` on `/var/lib/docker/overlay2` on stock Docker installs). If a future feature requires more, the change is a separate ADR + a separate `systemd` unit diff, not a silent extension. The minimal-cap set is the production baseline; the upstream `CapabilityBoundingSet=` (empty) recipe clears `CAP_DAC_READ_SEARCH` and breaks root readability of mode-0700 directories. |
+| **Production capability set (new constraint)** | The daemon runs in production with a minimal hardening-friendly `CapabilityBoundingSet=` (`CAP_DAC_READ_SEARCH CAP_DAC_OVERRIDE CAP_CHOWN CAP_FOWNER CAP_SETFCAP`). The overlay scan MUST NOT introduce new capability requirements — it must work with the existing `CAP_DAC_READ_SEARCH` capability (sufficient for `std::fs::read_dir` on `/var/lib/docker/overlay2` on stock Docker installs). If a future feature requires more, the change is a separate ADR + a separate `systemd` unit diff, not a silent extension. The minimal-cap set is the production baseline; the upstream `CapabilityBoundingSet=` (empty) recipe clears `CAP_DAC_READ_SEARCH` and breaks root readability of mode-0700 directories. |
 
 ## Compliance matrix
 
@@ -464,6 +464,7 @@ Required (per `TASK_PLANNING_GUIDE.md`):
 - Production deployment context (2026-08-13 sysadmin follow-up):
   the daemon runs with a minimal hardening-friendly
   `CapabilityBoundingSet=` (replaced upstream empty set after EACCES
-  on `/home/deploy/.docker` and `/home/deploy/.ssh`). Production
-  expects 2 candidates per tick. The overlay scan must work with
-  the existing capability set (no new caps required).
+  on the install user's `.docker` and `.ssh` directories in their
+  home). Production expects 2 candidates per tick. The overlay
+  scan must work with the existing capability set (no new caps
+  required).

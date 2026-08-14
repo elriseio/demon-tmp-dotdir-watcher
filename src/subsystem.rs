@@ -507,7 +507,7 @@ mod tests {
     fn walk_surfaces_unreadable_subtree() {
         // CR-006: a readable `scan_root` containing a
         // permission-denied subtree (the operator-reported
-        // `/home/deploy mode 700` shape) MUST surface a
+        // `<user_home>` directory-mode-700 shape) MUST surface a
         // synthetic Candidate for the unreadable subtree. We
         // use a missing intermediate path under a readable
         // parent as a stable stand-in for `chmod 700` (the
