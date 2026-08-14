@@ -43,7 +43,7 @@ pub enum SkipReason {
     Timeout,
 }
 
-/// AR-005: outcome of the idempotent `chmod 000` quarantine side
+/// Outcome of the idempotent `chmod 000` quarantine side
 /// effect (ARCHITECTURE.md invariant 7 — quarantine is reversible).
 ///
 /// Privacy: the `Failed(String)` payload is the io::Error's own
@@ -57,7 +57,7 @@ pub enum QuarantineOutcome {
     Failed(String),
 }
 
-/// AR-005: apply `chmod 000` to `path` as the IOC-match side effect.
+/// Apply `chmod 000` to `path` as the IOC-match side effect.
 ///
 /// Idempotent: re-invocation against a path that is already mode
 /// `0o000` returns `AlreadyQuarantined` without a syscall beyond
@@ -93,8 +93,8 @@ pub fn quarantine(path: &Path) -> QuarantineOutcome {
     }
 }
 
-/// AR-005: per-candidate decision emitted by the walk pipeline so
-/// AR-006 (journal + NTFY) and AR-008 (runtime wiring) can act on
+/// Per-candidate decision emitted by the walk pipeline so the
+/// journal + NTFY output and the runtime wiring can act on
 /// each candidate without re-classifying.
 ///
 /// Precedence (highest first):
@@ -105,8 +105,8 @@ pub fn quarantine(path: &Path) -> QuarantineOutcome {
 ///      `Allowlist`.
 ///   3. `IocMatch` — at least one entry file's SHA-256 is in the
 ///      `Matcher` set (the side-effect trigger for `quarantine`).
-///   4. `Unknown` — none of the above; AR-006 decides whether to
-///      alert based on `cfg.actions.alert_on_unknown`.
+///   4. `Unknown` — none of the above; the output layer decides
+///      whether to alert based on `cfg.actions.alert_on_unknown`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decision {
     Allowlisted,
@@ -115,14 +115,14 @@ pub enum Decision {
     Skipped(SkipReason),
 }
 
-/// AR-005: classify every candidate produced by `walk` so
-/// downstream consumers (AR-006 journal, AR-008 runtime) get a
+/// Classify every candidate produced by `walk` so downstream
+/// consumers (journal + NTFY output, runtime wiring) get a
 /// ready-to-act tuple without re-walking or re-hashing.
 ///
-/// This is the data shape AR-006 consumes. Quarantine side
-/// effects are NOT triggered here; the integration wiring that
-/// turns `Decision::IocMatch` into `quarantine()` calls lives in
-/// AR-008.
+/// This is the data shape the output layer consumes. Quarantine
+/// side effects are NOT triggered here; the integration wiring
+/// that turns `Decision::IocMatch` into `quarantine()` calls lives
+/// in the runtime layer.
 pub fn walk_decision_pipeline(
     candidates: Vec<Candidate>,
     matcher: &Matcher,

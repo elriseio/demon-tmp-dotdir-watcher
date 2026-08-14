@@ -1,5 +1,4 @@
-//! AR-006 + DE-020: journal-tag, NTFY alert output, and per-tick
-//! summary webhook payload.
+//! Journal-tag, NTFY alert output, and per-tick summary webhook payload.
 //!
 //! ARCHITECTURE.md invariant 3 ("Structured logging from the first
 //! line") and invariant 5 ("Failures are loud") drive the shape:
@@ -9,15 +8,15 @@
 //! bounded `ntfy_push` so the poll cycle is never blocked by a
 //! slow network.
 //!
-//! DE-020 adds the per-tick summary emit: `Severity` mapping from
-//! `RunSummary` to NTFY priority (info=2 / warn=3 / error=5) and
-//! `assemble_summary_payload` (pure body+headers assembler).
-//! `ntfy_push` itself stays unchanged so the IOC-match path and
-//! the post-tick-summary path share one transport.
+//! The per-tick summary emit maps `Severity` from `RunSummary`
+//! to NTFY priority (info=2 / warn=3 / error=5) and assembles the
+//! summary payload via `assemble_summary_payload` (pure
+//! body+headers assembler). `ntfy_push` itself is shared with
+//! the IOC-match path so both emit through one transport.
 //!
-//! The `reqwest` client builder is cached per-call (the issue scope
-//! does not require a process-wide singleton); if profiling shows
-//! this matters, lift it to a `OnceCell` in a follow-up.
+//! The `reqwest` client builder is cached per-call (the per-call
+//! cost is negligible); if profiling shows this matters, lift
+//! it to a `OnceCell` in a follow-up.
 
 #![allow(dead_code)]
 
@@ -33,10 +32,10 @@ use crate::runtime::RunSummary;
 
 const NTFY_TIMEOUT_SECS: u64 = 5;
 
-/// AR-006: `PRIORITY=4` WARNING event for an unknown
+/// `PRIORITY=4` WARNING event for an unknown
 /// non-allowlisted dotdir (the operator-side alert trigger from
 /// `Decision::Unknown` once `cfg.actions.alert_on_unknown` is
-/// wired in AR-008).
+/// wired in the runtime layer).
 pub fn emit_unknown(basename: &str, path: &Path) {
     warn!(
         target: "tmp-watcher",
@@ -47,9 +46,9 @@ pub fn emit_unknown(basename: &str, path: &Path) {
     );
 }
 
-/// AR-006: `PRIORITY=2` CRITICAL event for an IOC match (the
-/// trigger for the AR-005 `quarantine()` side effect). `sha256`
-/// is the matching entry's SHA-256 hex string.
+/// `PRIORITY=2` CRITICAL event for an IOC match (the
+/// trigger for the `quarantine()` side effect in `subsystem.rs`).
+/// `sha256` is the matching entry's SHA-256 hex string.
 pub fn emit_ioc_match(basename: &str, path: &Path, sha256: &str) {
     error!(
         target: "tmp-watcher",
@@ -61,9 +60,9 @@ pub fn emit_ioc_match(basename: &str, path: &Path, sha256: &str) {
     );
 }
 
-/// AR-006: `PRIORITY=2` CRITICAL event for a quarantine
+/// `PRIORITY=2` CRITICAL event for a quarantine
 /// side-effect failure (the `QuarantineOutcome::Failed(_)` arm of
-/// AR-005's `quarantine()`).
+/// `subsystem.rs::quarantine()`).
 pub fn emit_ioc_quarantine_failed(path: &Path, err: &str) {
     error!(
         target: "tmp-watcher",
@@ -74,9 +73,10 @@ pub fn emit_ioc_quarantine_failed(path: &Path, err: &str) {
     );
 }
 
-/// AR-006: `PRIORITY=4` WARNING event for allowlist loader
+/// `PRIORITY=4` WARNING event for allowlist loader
 /// warnings (mirrors `allowlist::load`'s warn-on-parse-failure
-/// path; centralized here so AR-008 has a single emit point).
+/// path; centralized here so the runtime layer has a single
+/// emit point).
 pub fn emit_allowlist_load_warning(path: &Path, reason: &str) {
     warn!(
         target: "tmp-watcher",
@@ -87,17 +87,17 @@ pub fn emit_allowlist_load_warning(path: &Path, reason: &str) {
     );
 }
 
-/// AR-006: async NTFY push to the operator's phone. `url = None`
+/// Async NTFY push to the operator's phone. `url = None`
 /// is the "operator has not configured NTFY" no-op path;
 /// `url = Some(_)` POSTs `body` to `url` with a `Title:` header
 /// and a 5-second timeout.
 ///
 /// Per ARCHITECTURE.md § Failure modes, the daemon does NOT
 /// retry inside one poll cycle; the next poll retries. We surface
-/// the error via `anyhow::Result` so AR-008 can decide whether
-/// to abort the tick or continue; we ALSO log the error here
-/// (with `priority = 2` CRITICAL) so the journal captures the
-/// failure regardless of caller-side handling.
+/// the error via `anyhow::Result` so the runtime layer can decide
+/// whether to abort the tick or continue; we ALSO log the error
+/// here (with `priority = 2` CRITICAL) so the journal captures
+/// the failure regardless of caller-side handling.
 ///
 /// Privacy note (per `AGENT_OUTPUT_SANITIZATION_POLICY.md`):
 /// the URL is logged verbatim because it is operator-supplied and
@@ -151,9 +151,9 @@ pub async fn ntfy_push(url: Option<&str>, title: &str, body: &str) -> Result<()>
     Ok(())
 }
 
-/// DE-020: per-tick severity tier. Drives the NTFY priority header
+/// Per-tick severity tier. Drives the NTFY priority header
 /// for the post-tick summary emit. Mapping matches
-/// `docs/contracts/webhook-payload.md` (DE-021) and the peer daemon's
+/// `docs/contracts/webhook-payload.md` and the peer daemon's
 /// `demon-docker-janitor/src/notify/mod.rs::Severity`. The
 /// `RefuseToRun` variant is intentionally absent here (tmp-watcher
 /// does not have that exit-code class); a top-level daemon error
@@ -166,7 +166,7 @@ pub enum Severity {
 }
 
 impl Severity {
-    /// DE-020: classify a tick into a severity tier. `tick_err = true`
+    /// Classify a tick into a severity tier. `tick_err = true`
     /// short-circuits to `Error` (the runtime catches `run_once` errors
     /// and passes `true` here so a top-level daemon failure surfaces
     /// as NTFY priority 5 even when the in-progress `RunSummary` is
@@ -175,7 +175,7 @@ impl Severity {
         if tick_err {
             return Self::Error;
         }
-        // Map per DE-020 acceptance §3.1 / AR-017 §2.2. Order: error
+        // Order: error first (so partial-quarantine-failure dominates unreadable /
         // first (so partial-quarantine-failure dominates unreadable /
         // skipped), then warn (any flapping signal), then info.
         if s.ioc_matches > 0 && s.quarantined < s.ioc_matches {
@@ -204,11 +204,11 @@ impl Severity {
     }
 }
 
-/// DE-020: pure assembler for the per-tick summary payload. Returns
+/// Pure assembler for the per-tick summary payload. Returns
 /// `(title, body, priority, tags)`. The body layout is the same
 /// `key=value` plain-text shape that `demon-docker-janitor` uses
 /// (see `docs/contracts/webhook-payload.md` peer contract, adapted
-/// to tmp-watcher's field set in DE-021).
+/// to tmp-watcher's field set).
 pub fn assemble_summary_payload(summary: &RunSummary, sev: Severity) -> (String, String, u8, String) {
     let status_str = sev.as_str();
     let title = format!("tmp-watcher: cycle {status_str}");
@@ -235,9 +235,9 @@ pub fn assemble_summary_payload(summary: &RunSummary, sev: Severity) -> (String,
     (title, body, priority, tags)
 }
 
-/// DE-020: per-tick NTFY push for the assembled summary. No-op when
-/// `Config.actions.ntfy_url` is `None` (embedded default per
-/// AR-011). When set, POSTs `Title`/`Priority`/`Tags` headers with
+/// Per-tick NTFY push for the assembled summary. No-op when
+/// `Config.actions.ntfy_url` is `None` (host-agnostic embedded
+/// default). When set, POSTs `Title`/`Priority`/`Tags` headers with
 /// the assembled `text/plain` body via the existing `ntfy_push`
 /// transport; 5-second timeout inherited.
 ///
@@ -246,11 +246,11 @@ pub fn assemble_summary_payload(summary: &RunSummary, sev: Severity) -> (String,
 /// to `Severity::Error` so the NTFY surface reflects the daemon
 /// failure rather than the default-state `RunSummary`.
 ///
-/// Per `AR-008` runtime closed path, the helper returns `Result<()>`
-/// so the runtime can log a `priority = 4` warning with `error = %e`
-/// on transport failure; the daemon does NOT retry inside one
-/// poll — the next poll retries, same "next-poll-retries" semantics
-/// as the IOC-match NTFY path.
+/// The helper returns `Result<()>` so the runtime can log a
+/// `priority = 4` warning with `error = %e` on transport failure;
+/// the daemon does NOT retry inside one poll — the next poll
+/// retries, same "next-poll-retries" semantics as the IOC-match
+/// NTFY path.
 pub async fn push_tick_summary(
     cfg: &Config,
     summary: &RunSummary,
@@ -272,9 +272,9 @@ pub async fn push_tick_summary(
     .await
 }
 
-/// DE-020 + DE-021: low-level helper used by `push_tick_summary`.
-/// Exposed as a separate fn so the httpmock round-trip test can
-/// verify headers + body byte-for-byte against the mock server.
+/// Low-level helper used by `push_tick_summary`. Exposed as a
+/// separate fn so the httpmock round-trip test can verify
+/// headers + body byte-for-byte against the mock server.
 pub async fn push_tick_summary_with_headers(
     url: Option<&str>,
     title: &str,
@@ -492,7 +492,7 @@ mod tests {
         );
     }
 
-    // === DE-020: Severity + assemble_summary_payload + httpmock round-trip ===
+    // === Severity + assemble_summary_payload + httpmock round-trip ===
 
     use crate::runtime::RunSummary;
 
@@ -546,14 +546,14 @@ mod tests {
         s.candidates = 0;
         // unreadable root forces Warn above Info; here we keep no
         // unreadable/skipped and just collapse to 0 candidates, per
-        // DE-020 §"Severity" mapping.
+        // the Severity mapping in `from_run_summary`.
         assert_eq!(Severity::from_run_summary(&s, false), Severity::Warn);
     }
 
     #[test]
     fn severity_error_when_tick_err_true_even_on_clean_summary() {
-        // DE-020 acceptance: a runtime.run_once error maps to Error
-        // regardless of in-progress RunSummary counters.
+        // A runtime.run_once error maps to Error regardless of
+        // in-progress RunSummary counters.
         let s = summary_clean();
         assert_eq!(
             Severity::from_run_summary(&s, true),
@@ -572,8 +572,7 @@ mod tests {
         assert_eq!(tags, "tmp,watcher,info");
 
         // Body must include every key=value line per the contract
-        // doc (DE-021). The exact integers come from summary_clean()
-        // above.
+        // doc. The exact integers come from summary_clean() above.
         assert!(body.contains("candidates=5"), "body: {body}");
         assert!(body.contains("allowlisted=2"), "body: {body}");
         assert!(body.contains("ioc_matches=0"), "body: {body}");
@@ -586,9 +585,9 @@ mod tests {
 
     #[test]
     fn assemble_payload_body_layout_matches_peer_daemon_convention() {
-        // DE-020 acceptance: body uses `\n` separators and `key=value`
-        // form per `demon-docker-janitor/docs/contracts/webhook-payload.md`
-        // (peer contract; DE-021 adapts it for tmp-watcher fields).
+        // Body uses `\n` separators and `key=value` form per
+        // `demon-docker-janitor/docs/contracts/webhook-payload.md`
+        // (peer contract; tmp-watcher field set is a subset).
         let s = summary_clean();
         let (_title, body, _priority, _tags) =
             assemble_summary_payload(&s, Severity::Info);
@@ -611,7 +610,7 @@ mod tests {
 
     #[tokio::test]
     async fn ntfy_push_round_trip_with_assembled_payload() {
-        // DE-022 round-trip acceptance: httpmock receives exactly one
+        // httpmock round-trip: receives exactly one
         // POST with the expected headers (Title / Priority / Tags)
         // and the body byte-for-byte.
         use httpmock::Method;
@@ -638,9 +637,9 @@ mod tests {
 
     #[tokio::test]
     async fn push_tick_summary_no_url_is_noop() {
-        // DE-020 acceptance: when Config.actions.ntfy_url is None the
-        // post-tick summary is journal-only; the helper short-circuits
-        // before any HTTP call.
+        // When Config.actions.ntfy_url is None the post-tick summary
+        // is journal-only; the helper short-circuits before any HTTP
+        // call.
         let cfg = Config {
             log: crate::config::LogConfig { level: "info".into() },
             runtime: crate::config::RuntimeConfig {

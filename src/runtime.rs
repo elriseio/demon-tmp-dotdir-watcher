@@ -1,4 +1,4 @@
-//! AR-008: runtime tick body.
+//! Runtime tick body.
 //!
 //! Wires the full pipeline that the bash reference impl performs
 //! per poll cycle:
@@ -8,7 +8,7 @@
 //!   3. Quarantine IOC matches (`subsystem::quarantine`).
 //!   4. Emit journal + NTFY events (`output::emit_*`).
 //!
-//! CR-005: the runtime is owned by `main()` and runs exactly one
+//! The runtime is owned by `main()` and runs exactly one
 //! poll cycle per systemd activation (`Type=oneshot`). Cadence
 //! is driven by the systemd timer per ARCHITECTURE.md
 //! invariant 2; the daemon itself does not drive an
@@ -45,7 +45,7 @@ pub struct RunSummary {
     /// unreadable root, and the runtime collects those paths
     /// here so the per-poll summary log line surfaces them.
     pub unreadable_roots: Vec<PathBuf>,
-    /// DE-020: wall-clock duration of the tick in seconds. Populated
+    /// Wall-clock duration of the tick in seconds. Populated
     /// by `Runtime::run_once` from the start of the walk to the
     /// pre-summary log line; surfaces in the per-tick NTFY summary
     /// body and the structured `info!` summary line.
@@ -108,11 +108,11 @@ impl Runtime {
         })
     }
 
-    /// AR-008 + ADR-0002 § 1 + DE-020: one full poll pipeline. Returns a
+    /// One full poll pipeline. Returns a
     /// `RunSummary` counter for logging, the post-tick NTFY summary
     /// emit, and the unit tests.
     ///
-    /// The 5-step ordering per the issue scope:
+    /// The 5-step ordering:
     ///   1. walk scan roots (host + overlay)
     ///   2. classify (allowlist + IOC match)
     ///   3. quarantine IOC matches
@@ -264,11 +264,11 @@ impl Runtime {
             "runtime: tick summary",
         );
 
-        // DE-020: post-tick NTFY summary emit. The transport reuses
+        // Post-tick NTFY summary emit. The transport reuses
         // the existing `ntfy_push` 5-second timeout; failures log
         // priority-4 WARNING and propagate as Err so the caller can
         // decide. `tick_err = false` because the per-tick aggregation
-        // above succeeded; the runtime.rs::run Err-arm sets
+        // above succeeded; the runtime Err-arm sets
         // `tick_err = true` if run_once itself errored.
         summary.duration_seconds = started_at.elapsed().as_secs();
         if let Err(e) = output::push_tick_summary(&self.cfg, &summary, false).await {
@@ -323,7 +323,7 @@ impl Runtime {
                         error = %e,
                         "runtime: tick failed",
                     );
-                    // DE-020: surface the runtime error as
+                    // Surface the runtime error as
                     // NTFY Severity::Error so the operator phone
                     // receives a priority-5 alert even though the
                     // per-tick RunSummary is unavailable. The
@@ -351,10 +351,10 @@ impl Runtime {
     }
 }
 
-/// AR-008 + DE-019: NTFY push for an IOC match. The URL is taken
-/// from `self.cfg.actions.ntfy_url`; when `None` (embedded default
-/// per AR-011), `output::ntfy_push(None, …)` is a documented no-op
-/// and the IOC match surfaces on the journal only.
+/// NTFY push for an IOC match. The URL is taken
+/// from `self.cfg.actions.ntfy_url`; when `None` (host-agnostic
+/// embedded default), `output::ntfy_push(None, …)` is a documented
+/// no-op and the IOC match surfaces on the journal only.
 async fn push_ntfy_for_match(
     basename: &str,
     path: &Path,
@@ -381,7 +381,7 @@ mod tests {
 
     #[tokio::test]
     async fn run_once_full_pipeline() {
-        // AR-008 acceptance: a tempdir containing a known IOC
+        // A tempdir containing a known IOC
         // file under a non-allowlisted dotdir produces
         // `RunSummary { ioc_matches: 1, quarantined: 1, unknown: 0 }`
         // and the dotdir is now chmod 0o000.
@@ -618,13 +618,13 @@ mod tests {
         assert_eq!(summary.skipped, 1, "Skipped(IoError) must bump skipped");
     }
 
-    // === DE-020: post-tick NTFY summary emit (httpmock round-trip) ===
+    // === post-tick NTFY summary emit (httpmock round-trip) ===
 
     #[tokio::test]
     async fn run_once_emits_ntfy_summary_when_configured() {
         use httpmock::Method;
 
-        // DE-020 acceptance: a clean tick with `actions.ntfy_url` set
+        // A clean tick with `actions.ntfy_url` set
         // POSTs one summary to the operator URL with Title,
         // Priority=2 (info), Tags headers, and the expected body.
         let server = httpmock::MockServer::start();
@@ -681,10 +681,10 @@ mod tests {
 
     #[tokio::test]
     async fn run_once_no_ntfy_when_unconfigured() {
-        // DE-020 acceptance: when `actions.ntfy_url` is None the
-        // runtime must NOT fire any HTTP traffic. The httpmock
-        // server has no mocks registered; if a request reaches it,
-        // the test fails loudly via the no-server test.
+        // When `actions.ntfy_url` is None the runtime must NOT fire
+        // any HTTP traffic. The httpmock server has no mocks
+        // registered; if a request reaches it, the test fails
+        // loudly via the no-server test.
         let tmp = TempDir::new("de020_no_ntfy");
         let ioc_list = TempFile::with_content("de020_ioc_list", b"# empty\n");
         let proposer = tmp.path().join("proposed.iocs");
@@ -710,7 +710,7 @@ mod tests {
     async fn run_once_warn_priority_when_unreadable_root() {
         use httpmock::Method;
 
-        // DE-020 acceptance: a tick where the scan_root is unreadable
+        // A tick where the scan_root is unreadable
         // (EACCES, missing path, etc.) classifies the summary as
         // Severity::Warn and POSTs Priority=3.
         let server = httpmock::MockServer::start();

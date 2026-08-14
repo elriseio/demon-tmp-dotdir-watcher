@@ -229,8 +229,9 @@ pub fn walk_overlay(
             None => continue,
         };
         // ADR-0002 § 1 + operator direction 2026-08-13: the
-        // detection fingerprint is `.<lowercase-token>/` (issue
-        // DE-006 § "Detection target"). `dotdir_only` therefore
+        // detection fingerprint is `.<lowercase-token>/`
+        // (the overlay walker must match the host-side walker).
+        // `dotdir_only` therefore
         // requires a lowercase letter immediately after the dot —
         // this skips `sess_*`, `systemd-private-*` (no dot
         // prefix) and `.X11-unix`, `.ICE-unix` (uppercase X11/ICE
@@ -267,7 +268,8 @@ pub fn walk_overlay(
 
 /// True iff `basename` starts with `.` followed by an ASCII
 /// lowercase letter — the operator-scoped detection fingerprint
-/// (issue DE-006 § "Detection target"). Non-lowercase `.X11-unix`
+/// (the overlay walker must match the host-side walker).
+/// Non-lowercase `.X11-unix`
 /// and `.ICE-unix` are filtered out here; the operator's
 /// `.font-unix` / `systemd-private-*` patterns are filtered by
 /// the allowlist pass after this function returns true.

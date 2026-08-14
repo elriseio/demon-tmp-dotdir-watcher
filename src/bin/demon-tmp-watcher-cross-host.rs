@@ -3,7 +3,8 @@
 //! Reads per-host observation streams from a `Sink` (abstracted
 //! transport), aggregates them across hosts, and writes candidate-IOC
 //! proposal entries to `/etc/tmp-watcher.proposed.iocs` (the same
-//! file the detection daemon writes per AR-013) with a
+//! file the detection daemon writes for unknown-candidate proposal)
+//! with a
 //! `cross_host_count=N` suffix.
 //!
 //! Cadence is driven by the systemd timer (one activation per

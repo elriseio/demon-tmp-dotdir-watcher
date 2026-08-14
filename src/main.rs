@@ -35,7 +35,7 @@ fn init_logging(cfg: &LogConfig) -> Result<()> {
     Ok(())
 }
 
-/// AR-008: stderr-bound variant of `init_logging` for the
+/// stderr-bound variant of `init_logging` for the
 /// `--dry-run` CLI handler. The runtime path uses
 /// `init_logging` (stdout-bound) per the daemon's existing
 /// operator runbook (`journalctl -t tmp-watcher` captures stdout
@@ -151,12 +151,11 @@ async fn main() -> Result<()> {
     cfg.validate().context("config validation")?;
 
     if cli.dry_run {
-        // AR-008: `--dry-run` runs the full `Runtime::run_once`
+        // `--dry-run` runs the full `Runtime::run_once`
         // pipeline once and emits structured JSON logs to stderr
         // so operators can verify config + scan coverage + IOC
         // matching before booting the daemon. Exits after one
-        // tick per the AR-008 acceptance clause "the loop runs
-        // once because the --dry-run flag exits after run_once".
+        // tick because the `--dry-run` flag exits after run_once.
         //
         // SAFETY: `--dry-run` MUST NOT mutate the host. Override
         // `actions.quarantine_on_ioc_match` to false for this

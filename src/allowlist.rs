@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-// AR-004: glob-based allowlist filter for known-good dot-directories.
+// Glob-based allowlist filter for known-good dot-directories.
 // Loader contract: docs/contracts/tmp-watcher-allowlist-ioc.md § File:
-// `/etc/tmp-watcher.allowlist`. Wired into the runtime by AR-008.
+// `/etc/tmp-watcher.allowlist`. Wired into the runtime by `subsystem.rs`.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
