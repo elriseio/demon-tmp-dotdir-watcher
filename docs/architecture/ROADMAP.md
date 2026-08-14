@@ -4,25 +4,24 @@ doc_slug: architecture_roadmap
 doc_type: architecture_roadmap
 applicable_roles: [all]
 version: 2
-summary: "Roadmap for the tmp-watcher daemon. Active wave = hardening follow-up after DE-006 production deployment. Recently-closed waves = container overlay scan (DE-006), learning baseline (AR-013/014/015), Rust port (AR-001..AR-008). Planned waves = shadow cutover, forensic archive auto-refresh, cross-host IOC sync."
+summary: "Roadmap for the tmp-watcher daemon. Active wave = hardening follow-up after the overlay-scan production deployment. Recently-closed waves = container overlay scan, learning baseline, Rust port. Planned waves = shadow cutover, forensic archive auto-refresh, cross-host IOC sync."
 source_artifacts:
   - docs/architecture/STATUS.md
   - ORIGIN.md
   - ARCHITECTURE.md
   - DAEMON.md
   - RUNBOOK.md
-  - Issues/done/developer/DE-006_implement_overlay_scan.md
-  - Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md
+  - the overlay-scan and SA-003 production deployment commits
+    (per git log)
 tags: [roadmap, daemon, tmp_watcher, rust_port, waves, prod_deployment, overlay_scan]
 ---
 
 # tmp-watcher — Roadmap
 
-## Active wave — `wave-hardening-followup-007` (post-DE-006 production reality)
+## Active wave — `wave-hardening-followup-007` (post-overlay-scan production reality)
 
-After DE-006 closure and the tmp-vps production deployment
-(`Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md`,
-2026-08-13 follow-up), one operational follow-up surfaces:
+After the overlay-scan closure and the tmp-vps production deployment
+(2026-08-13 sysadmin follow-up), one operational follow-up surfaces:
 
 | Task | Title | Layer | Owner | Depends on |
 |---|---|---|---|---|
@@ -83,21 +82,23 @@ Acceptance for the wave as a whole:
   text-grep).
 - All 10 tests from ADR-0002 § "Decision" item 9 pass.
 
-Verification per DE-006 DoD-Report `Status: CLOSED (full closure)`:
+Verification per the overlay-scan closure DoD report:
 82 tests pass; `cargo clippy --all-targets` clean; runtime
 integration verified via `--dry-run` against an overlay fixture.
-Production deployment context recorded in
-`Issues/done/sysadmin/SA-003_install_demon-tmp-dotdir-watcher_on_tmp_vps.md`
-(2026-08-13 follow-up: capability set updated, 2 candidates per
-tick on tmp-vps).
+Production deployment context recorded in the sysadmin
+2026-08-13 follow-up commit (capability set updated, 2 candidates
+per tick on tmp-vps).
 
 ### `wave-learning-baseline-005` (closed 2026-08-12)
 
 Codify the empty/missing IOC list as a first-class bootstrap state
-and ship the first three learning tasks from the AR-012 decomposition.
+and ship the first three learning tasks from the learning-model
+decomposition (per `docs/adr/0001-tmp-watcher-learning-model.md`).
 Driver: operator directive 2026-08-12 — "при первом старте
 /etc/tmp-watcher.iocs пустой или может вообще отсутствовать".
-Foundation task AR-015 first (no deps), then AR-013, then AR-014.
+Foundation task (empty-list baseline) first (no deps), then the
+auto-promotion task, then the cross-host correlation task (table
+below lists them by role-code).
 
 | Task | Title | Layer | Commit count | Depends on |
 |---|---|---|---|---|
@@ -110,8 +111,10 @@ Foundation task AR-015 first (no deps), then AR-013, then AR-014.
 Replace the placeholder Rust scaffold with a runtime-backed
 implementation that preserves the bash-spec invariants.
 
-Scope: 8 bounded developer tasks (`Issues/open/developer/AR-001..AR-008`),
-each ≤ 1 commit, ≤ 5 files, single primary layer.
+Scope: 8 bounded developer tasks (see the wave-table below for
+per-task role-codes; the local queue for this wave has been
+archived and the closure lineage lives in git history), each ≤ 1
+commit, ≤ 5 files, single primary layer.
 
 | Task | Title | Layer | Commit count | Depends on |
 |---|---|---|---|---|
@@ -165,19 +168,20 @@ operator action.
 Per `ORIGIN.md` "Outstanding issues → Cross-host IOC sync":
 shared IOC list on `iton-nest` synced via cron, consumed by
 each `tmp-watcher` host. The `cross_host` module shipped in
-`wave-learning-baseline-005` (AR-014) is the local-side; the
-shared-list sync is the next layer.
+`wave-learning-baseline-005` (see the wave-table for the
+per-task role-code) is the local-side; the shared-list sync is
+the next layer.
 
 ## Cross-cutting track anchors
 
 | Track | Anchor doc | Owner | Status |
 |---|---|---|---|
 | Observability | `RUNBOOK.md` (journal queries, NTFY) | architect + sysadmin | live; Rust port preserves |
-| Logging | `RUNBOOK.md` § "Quick health check" + `ARCHITECTURE.md` invariant 3 | architect | preserved by AR-006 |
-| Config | `config/default.yaml` + `Cargo.toml` deps | architect | extended via AR-001 + DE-006 (overlay keys) |
-| Security | `chmod 0o000` quarantine + allowlist + IOC list + production capability set | architect + sysadmin | preserved by AR-005 + AR-004 + AR-003; production capability baseline recorded in SA-003 follow-up (2026-08-13) |
-| Container overlay | `src/overlay.rs` + ADR-0002 + DE-006 DoD | architect + developer | shipped 2026-08-13 |
-| Capability contract | `packaging/tmp-watcher-cross-host.service` minimal `CapabilityBoundingSet=` | sysadmin | live (2026-08-13, per SA-003 follow-up) |
+| Logging | `RUNBOOK.md` § "Quick health check" + `ARCHITECTURE.md` invariant 3 | architect | preserved by the alert-output module |
+| Config | `config/default.toml` + `Cargo.toml` deps | architect | extended via the config-schema and overlay-scan waves |
+| Security | `chmod 0o000` quarantine + allowlist + IOC list + production capability set | architect + sysadmin | preserved across the rust-port + overlay-scan waves; production capability baseline recorded in the sysadmin 2026-08-13 follow-up |
+| Container overlay | `src/overlay.rs` + ADR-0002 | architect + developer | shipped 2026-08-13 |
+| Capability contract | `packaging/tmp-watcher-cross-host.service` minimal `CapabilityBoundingSet=` | sysadmin | live (2026-08-13, per the sysadmin production-capability follow-up) |
 | Documentation | `ORIGIN.md` / `ARCHITECTURE.md` / `DAEMON.md` / `RUNBOOK.md` / `docs/components/tmp-watcher.md` / `docs/contracts/tmp-watcher-allowlist-ioc.md` / `docs/architecture/{STATUS,ROADMAP}.md` | architect (direct write) | live; spec-vs-code reconciliation on every implementation commit |
 
 ## Coordination notes
@@ -190,25 +194,28 @@ shared-list sync is the next layer.
   "no new capability requirements." Future features that need more
   caps require a separate ADR.
 - The `wave-container-overlay-006` (closed 2026-08-13) was
-  **single-role**: only `developer` consumed
-  `Issues/done/developer/DE-006` (now in `Issues/done/developer/`
-  with `Status: CLOSED (full closure)` per the file's DoD-Report).
-  Architect monitored via
-  `memory.get_task_lineage_chain(project_slug, task_ref='DE-006_*.md')`
-  after closure. Verification: 82 tests pass; production deployment
-  confirmed via SA-003 follow-up.
+  **single-role**: only `developer` consumed the overlay-scan
+  task (the closure lineage is in git log; the local queue
+  entry has been archived). Architect monitored via
+  `memory.get_task_lineage_chain` after closure. Verification:
+  82 tests pass; production deployment confirmed via the
+  sysadmin follow-up.
 - The `wave-learning-baseline-005` (closed 2026-08-12) was
-  **single-role**: only `developer` consumed `AR-013`, `AR-014`,
-  `AR-015` (foundation-first ordering).
+  **single-role**: only `developer` consumed the three
+  learning-model tasks (see the wave-table for per-task
+  role-codes; foundation-first ordering).
 - The `wave-rust-port-001` (closed 2026-08-12) was **single-role**:
-  only `developer` consumed `AR-001..AR-008`.
+  only `developer` consumed the 8-task rust-port decomposition
+  (see the wave-table for per-task role-codes).
 - Tests (cross-role handoff to `tester`) are out of scope — each
-  task carries its own unit tests and the smoke test (AR-007 +
-  DE-006). A separate `wave-test-coverage-008` may be added if
-  live-host test gaps surface.
+  task carries its own unit tests and the smoke test (the CLI
+  wave + the overlay-scan wave). A separate `wave-test-coverage-008`
+  may be added if live-host test gaps surface.
 - Operator approval required at the end of `wave-shadow-cutover-002`
   (cutover is the operator's call; not the daemon's).
-- Operator must answer the three open questions in AR-014 §
-  "Open questions for operator" before AR-014 ships in production:
+- Operator must answer the three open questions in the
+  cross-host sidecar's "Open questions for operator" section (per
+  the ADR-0001 decomposition; see `docs/adr/0001-tmp-watcher-learning-model.md`)
+  before the cross-host task ships in production:
   per-host observation sink transport, host identity source,
   whether the sidecar is enabled on day 1.

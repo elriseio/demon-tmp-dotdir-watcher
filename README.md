@@ -273,7 +273,7 @@ memory when no timer is firing.
 ## Deployment (systemd)
 
 The daemon is timer-driven. The stub unit + timer ship in
-`contrib/systemd/` (DE-018); install via `make install-units`
+`contrib/systemd/`; install via `make install-units`
 (copies to `/etc/systemd/system/`) or copy them manually.
 
 ```bash
@@ -451,7 +451,7 @@ demon-tmp-dotdir-watcher/
 │   └── runtime.rs        # walk + classify + quarantine e2e
 ├── contrib/
 │   ├── config/
-│   │   └── tmp-watcher.toml.example   # operator-facing example config (TOML)
+│   │   └── tmp-watcher.conf.example   # operator-facing example config (TOML format, peer-daemon .conf extension)
 │   └── systemd/
 │       ├── tmp-watcher.service        # Type=oneshot stub per invariant 2
 │       └── tmp-watcher.timer          # OnUnitActiveSec=10min
@@ -459,13 +459,13 @@ demon-tmp-dotdir-watcher/
 │   ├── components/tmp-watcher.md
 │   ├── contracts/
 │   │   ├── tmp-watcher-allowlist-ioc.md
-│   │   └── webhook-payload.md         # NTFY post-tick summary contract (DE-021)
+│   │   └── webhook-payload.md         # NTFY post-tick summary contract
 │   ├── architecture/ROADMAP.md
 │   └── architecture/STATUS.md
 ├── ORIGIN.md             # canonical operator-facing description
 ├── DAEMON.md             # on-ramp summary for an architect
 ├── ARCHITECTURE.md       # component breakdown + invariants + failure modes
-├── Makefile              # build / test / lint / install helpers (DE-018)
+├── Makefile              # build / test / lint / install helpers
 ├── RUNBOOK.md            # operator triage flow + Webhook channel triage
 └── README.md             # this file
 ```
