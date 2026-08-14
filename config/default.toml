@@ -1,0 +1,42 @@
+#### Default config for demon-tmp-dotdir-watcher; override via env DEMON_<u>TMP_DOTDIR_WATCHER</u>_<KEY>.
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+#### <subsystem>: see ORIGIN.md (paths, ioc, allowlist, actions, output).
+[paths]
+scan_roots = ["/tmp", "/home", "/var/tmp"]
+scan_maxdepth = 3
+scan_window_minutes = 1440
+#### Overlay-fs scan (ADR-0002): walks Docker overlay2 layers for
+#### container-resident Azazel-style dot-directories. v1 covers
+#### Docker overlay2 only; Podman / containerd / CRI-O are future
+#### work tracked in `docs/architecture/STATUS.md`. Set
+#### `overlay_scan.enabled: false` on hosts without Docker.
+[paths.overlay_scan]
+enabled = true
+roots = ["/var/lib/docker/overlay2"]
+maxdepth = 3
+dotdir_only = true
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+proposed_iocs = "/etc/tmp-watcher.proposed.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
+
+#### Operator-side report directory convention. The daemon itself does
+#### not read or write this path; audit notes and incident files are
+#### produced by the operator following RUNBOOK.md § "Audit notes".
+#### Override per host via /etc/tmp-watcher.yaml or
+#### DEMON_TMP_DOTDIR_WATCHER_REPORT_DIR. Docs reference this convention
+#### via ${REPORT_DIR} so the operator's home directory is never named.
+#### Canonical default: /var/lib/tmp-watcher/reports/
+#### report_dir: /var/lib/tmp-watcher/reports/

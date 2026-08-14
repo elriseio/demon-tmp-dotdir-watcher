@@ -111,7 +111,7 @@ pub struct ActionsConfig {
     /// runtime POSTs the per-tick summary via `output::ntfy_push`.
     /// When `None` (embedded default), the alert channel is journal-only
     /// (per AR-011: host-agnostic embedded default; the concrete value
-    /// lives in `/etc/tmp-watcher.yaml` or `DEMON_ACTIONS__NTFY_URL`).
+    /// lives in `/etc/tmp-watcher.yaml` or `DEMON_ACTIONS_NTFY_URL`).
     #[serde(default)]
     pub ntfy_url: Option<String>,
 }
@@ -168,10 +168,10 @@ pub fn load_config(path: Option<&Path>) -> Result<Config> {
         None => String::new(),
     };
     let cfg: Config = if raw.trim().is_empty() {
-        serde_yaml::from_str(include_str!("../config/default.yaml"))
-            .context("parse embedded default config")?
+        toml::from_str(include_str!("../config/default.toml"))
+            .context("parse embedded default config (toml)")?
     } else {
-        serde_yaml::from_str(&raw).context("parse config file")?
+        toml::from_str(&raw).context("parse config file (toml)")?
     };
 
     Ok(apply_env_overrides(cfg))
@@ -190,17 +190,17 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
 
     set_from_env!(
         cfg,
-        "DEMON_PATHS__SCAN_MAXDEPTH",
+        "DEMON_PATHS_SCAN_MAXDEPTH",
         cfg.paths.scan_maxdepth,
         usize
     );
     set_from_env!(
         cfg,
-        "DEMON_PATHS__SCAN_WINDOW_MINUTES",
+        "DEMON_PATHS_SCAN_WINDOW_MINUTES",
         cfg.paths.scan_window_minutes,
         u32
     );
-    if let Ok(v) = std::env::var("DEMON_PATHS__SCAN_ROOTS") {
+    if let Ok(v) = std::env::var("DEMON_PATHS_SCAN_ROOTS") {
         cfg.paths.scan_roots = v
             .split(':')
             .filter(|s| !s.is_empty())
@@ -210,11 +210,11 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
     // ADR-0002 § 4: overlay-fs scan env overrides.
     set_from_env!(
         cfg,
-        "DEMON_PATHS__OVERLAY_SCAN_ENABLED",
+        "DEMON_PATHS_OVERLAY_SCAN_ENABLED",
         cfg.paths.overlay_scan.enabled,
         bool
     );
-    if let Ok(v) = std::env::var("DEMON_PATHS__OVERLAY_SCAN_ROOTS") {
+    if let Ok(v) = std::env::var("DEMON_PATHS_OVERLAY_SCAN_ROOTS") {
         cfg.paths.overlay_scan.roots = v
             .split(':')
             .filter(|s| !s.is_empty())
@@ -223,51 +223,51 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
     }
     set_from_env!(
         cfg,
-        "DEMON_PATHS__OVERLAY_SCAN_MAXDEPTH",
+        "DEMON_PATHS_OVERLAY_SCAN_MAXDEPTH",
         cfg.paths.overlay_scan.maxdepth,
         usize
     );
     set_from_env!(
         cfg,
-        "DEMON_PATHS__OVERLAY_SCAN_DOTDIR_ONLY",
+        "DEMON_PATHS_OVERLAY_SCAN_DOTDIR_ONLY",
         cfg.paths.overlay_scan.dotdir_only,
         bool
     );
-    if let Ok(v) = std::env::var("DEMON_IOC__IOC_LIST") {
+    if let Ok(v) = std::env::var("DEMON_IOC_IOC_LIST") {
         cfg.ioc.ioc_list = PathBuf::from(v);
     }
-    if let Ok(v) = std::env::var("DEMON_IOC__IOC_ARCHIVE_REF") {
+    if let Ok(v) = std::env::var("DEMON_IOC_IOC_ARCHIVE_REF") {
         cfg.ioc.ioc_archive_ref = Some(PathBuf::from(v));
     }
-    if let Ok(v) = std::env::var("DEMON_IOC__PROPOSED_IOCS") {
+    if let Ok(v) = std::env::var("DEMON_IOC_PROPOSED_IOCS") {
         cfg.ioc.proposed_iocs = Some(PathBuf::from(v));
     }
-    if let Ok(v) = std::env::var("DEMON_ALLOWLIST__ALLOWLIST") {
+    if let Ok(v) = std::env::var("DEMON_ALLOWLIST_ALLOWLIST") {
         cfg.allowlist.allowlist = PathBuf::from(v);
     }
     set_from_env!(
         cfg,
-        "DEMON_ALLOWLIST__MAX_FILES_PER_DIR",
+        "DEMON_ALLOWLIST_MAX_FILES_PER_DIR",
         cfg.allowlist.max_files_per_dir,
         usize
     );
     set_from_env!(
         cfg,
-        "DEMON_ACTIONS__QUARANTINE_ON_IOC_MATCH",
+        "DEMON_ACTIONS_QUARANTINE_ON_IOC_MATCH",
         cfg.actions.quarantine_on_ioc_match,
         bool
     );
     set_from_env!(
         cfg,
-        "DEMON_ACTIONS__ALERT_ON_UNKNOWN",
+        "DEMON_ACTIONS_ALERT_ON_UNKNOWN",
         cfg.actions.alert_on_unknown,
         bool
     );
-    // DE-019: NTFY topic URL. Mirror the `DEMON_IOC__IOC_LIST` override
+    // DE-019: NTFY topic URL. Mirror the `DEMON_IOC_IOC_LIST` override
     // pattern: raw `std::env::var` + `PathBuf::from(...)` style is
     // unsuitable for a free-form URL string, so we use the explicit
     // form and warn on invalid (non-UTF-8) values without panicking.
-    if let Ok(v) = std::env::var("DEMON_ACTIONS__NTFY_URL") {
+    if let Ok(v) = std::env::var("DEMON_ACTIONS_NTFY_URL") {
         cfg.actions.ntfy_url = Some(v);
     }
 
@@ -278,32 +278,36 @@ pub fn apply_env_overrides(mut cfg: Config) -> Config {
 mod tests {
     use super::*;
 
-    fn load_from_yaml(yaml: &str) -> Config {
-        let cfg: Config = serde_yaml::from_str(yaml).expect("test yaml must parse");
+    fn load_from_toml(toml_str: &str) -> Config {
+        let cfg: Config = toml::from_str(toml_str).expect("test toml must parse");
         apply_env_overrides(cfg)
     }
 
-    const VALID_YAML: &str = r#"
-log:
-  level: info
-runtime:
-  shutdown_timeout_sec: 30
-paths:
-  scan_roots: ["/tmp"]
-  scan_maxdepth: 3
-  scan_window_minutes: 60
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+    const VALID_TOML: &str = r#"
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+[paths]
+scan_roots = ["/tmp"]
+scan_maxdepth = 3
+scan_window_minutes = 60
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 "#;
 
     #[test]
-    fn load_embedded_default_config() {
+    fn load_embedded_default_toml_config() {
         let cfg = load_config(None).expect("default config must parse");
         assert!(cfg.runtime.shutdown_timeout_sec > 0);
         assert!(cfg.paths.scan_maxdepth <= SCAN_MAXDEPTH_LIMIT);
@@ -318,57 +322,65 @@ actions:
     }
 
     #[test]
-    fn validate_passes_explicit_valid_yaml() {
-        let cfg = load_from_yaml(VALID_YAML);
-        cfg.validate().expect("explicit valid yaml must validate");
+    fn validate_passes_explicit_valid_toml() {
+        let cfg = load_from_toml(VALID_TOML);
+        cfg.validate().expect("explicit valid toml must validate");
     }
 
     #[test]
     fn validate_rejects_scan_maxdepth_above_limit() {
-        let yaml = r#"
-log:
-  level: info
-runtime:
-  shutdown_timeout_sec: 30
-paths:
-  scan_roots: ["/tmp"]
-  scan_maxdepth: 10
-  scan_window_minutes: 60
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+        let toml_str = r#"
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+[paths]
+scan_roots = ["/tmp"]
+scan_maxdepth = 10
+scan_window_minutes = 60
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 "#;
-        let cfg = load_from_yaml(yaml);
+        let cfg = load_from_toml(toml_str);
         let err = cfg.validate().expect_err("scan_maxdepth > 3 must fail");
         assert!(err.to_string().contains("scan_maxdepth"));
     }
 
     #[test]
     fn validate_rejects_zero_scan_window_minutes() {
-        let yaml = r#"
-log:
-  level: info
-runtime:
-  shutdown_timeout_sec: 30
-paths:
-  scan_roots: ["/tmp"]
-  scan_maxdepth: 1
-  scan_window_minutes: 0
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+        let toml_str = r#"
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+[paths]
+scan_roots = ["/tmp"]
+scan_maxdepth = 1
+scan_window_minutes = 0
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 "#;
-        let cfg = load_from_yaml(yaml);
+        let cfg = load_from_toml(toml_str);
         let err = cfg
             .validate()
             .expect_err("scan_window_minutes == 0 must fail");
@@ -377,50 +389,58 @@ actions:
 
     #[test]
     fn validate_rejects_empty_scan_roots() {
-        let yaml = r#"
-log:
-  level: info
-runtime:
-  shutdown_timeout_sec: 30
-paths:
-  scan_roots: []
-  scan_maxdepth: 1
-  scan_window_minutes: 60
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 10
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+        let toml_str = r#"
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+[paths]
+scan_roots = []
+scan_maxdepth = 1
+scan_window_minutes = 60
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 10
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 "#;
-        let cfg = load_from_yaml(yaml);
+        let cfg = load_from_toml(toml_str);
         let err = cfg.validate().expect_err("empty scan_roots must fail");
         assert!(err.to_string().contains("scan_roots"));
     }
 
     #[test]
     fn validate_rejects_max_files_per_dir_above_limit() {
-        let yaml = r#"
-log:
-  level: info
-runtime:
-  shutdown_timeout_sec: 30
-paths:
-  scan_roots: ["/tmp"]
-  scan_maxdepth: 3
-  scan_window_minutes: 60
-ioc:
-  ioc_list: "/etc/tmp-watcher.iocs"
-allowlist:
-  allowlist: "/etc/tmp-watcher.allowlist"
-  max_files_per_dir: 20
-actions:
-  quarantine_on_ioc_match: true
-  alert_on_unknown: true
+        let toml_str = r#"
+log = { level = "info" }
+
+[runtime]
+shutdown_timeout_sec = 30
+
+[paths]
+scan_roots = ["/tmp"]
+scan_maxdepth = 3
+scan_window_minutes = 60
+
+[ioc]
+ioc_list = "/etc/tmp-watcher.iocs"
+
+[allowlist]
+allowlist = "/etc/tmp-watcher.allowlist"
+max_files_per_dir = 20
+
+[actions]
+quarantine_on_ioc_match = true
+alert_on_unknown = true
 "#;
-        let cfg = load_from_yaml(yaml);
+        let cfg = load_from_toml(toml_str);
         let err = cfg
             .validate()
             .expect_err("max_files_per_dir > 10 must fail");
@@ -428,14 +448,14 @@ actions:
     }
 
     #[test]
-    fn env_overrides_paths_scan_maxdepth() {
-        std::env::set_var("DEMON_PATHS__SCAN_MAXDEPTH", "2");
+    fn env_overrides_paths_scan_maxdepth_toml() {
+        std::env::set_var("DEMON_PATHS_SCAN_MAXDEPTH", "2");
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(cfg.paths.scan_maxdepth, 2);
-        std::env::remove_var("DEMON_PATHS__SCAN_MAXDEPTH");
+        std::env::remove_var("DEMON_PATHS_SCAN_MAXDEPTH");
     }
 
-    /// DE-019: serialised env-override test for `DEMON_ACTIONS__NTFY_URL`.
+    /// DE-019: serialised env-override test for `DEMON_ACTIONS_NTFY_URL`.
     ///
     /// The acceptance criterion is three checks (env-override-set /
     /// env-override-unset / embedded-default-has-no-ntfy-url). They all
@@ -447,26 +467,26 @@ actions:
     fn env_override_ntfy_url_set_unset_and_default() {
         // 1. Embedded default: host-agnostic, no concrete NTFY URL
         //    (per AR-011 / AR-010 host-agnostic rule).
-        std::env::remove_var("DEMON_ACTIONS__NTFY_URL");
+        std::env::remove_var("DEMON_ACTIONS_NTFY_URL");
         let cfg = load_config(None).expect("default config must parse");
         assert!(
             cfg.actions.ntfy_url.is_none(),
             "embedded default must carry no ntfy_url (AR-011 host-agnostic rule)"
         );
         // 2. With env var set: the field is populated verbatim.
-        std::env::set_var("DEMON_ACTIONS__NTFY_URL", "https://ntfy.sh/test");
+        std::env::set_var("DEMON_ACTIONS_NTFY_URL", "https://ntfy.sh/test");
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(
             cfg.actions.ntfy_url,
             Some("https://ntfy.sh/test".to_string()),
-            "DEMON_ACTIONS__NTFY_URL must populate actions.ntfy_url"
+            "DEMON_ACTIONS_NTFY_URL must populate actions.ntfy_url"
         );
         // 3. With env var removed again: field returns to None.
-        std::env::remove_var("DEMON_ACTIONS__NTFY_URL");
+        std::env::remove_var("DEMON_ACTIONS_NTFY_URL");
         let cfg = load_config(None).expect("default config must parse");
         assert_eq!(
             cfg.actions.ntfy_url, None,
-            "DEMON_ACTIONS__NTFY_URL unset must keep embedded-default None"
+            "DEMON_ACTIONS_NTFY_URL unset must keep embedded-default None"
         );
     }
 

@@ -1,7 +1,7 @@
 //! CR-005 regression tests: oneshot runtime contract.
 //!
 //! Boots the daemon with a tempdir scan_root (via a generated
-//! YAML config), asserts:
+//! TOML config), asserts:
 //!   1. `daemon_exits_cleanly_after_one_poll` — exit 0 within
 //!      the boot+poll budget, with no SIGTERM sent. This is the
 //!      primary regression test for the CR-005 fix (Runtime::run
@@ -17,35 +17,39 @@ use assert_cmd::cargo::cargo_bin;
 
 const BIN: &str = env!("CARGO_PKG_NAME");
 
-/// Write a self-contained YAML config that points the daemon's
+/// Write a self-contained TOML config that points the daemon's
 /// only `scan_root` at `tmp` and `quarantine_on_ioc_match: false`
 /// so the test cannot mutate the host regardless of what the
 /// fixture contains.
 fn write_minimal_config(tmp: &std::path::Path) -> std::path::PathBuf {
-    let cfg_path = tmp.join("config.yaml");
-    let mut f = std::fs::File::create(&cfg_path).expect("create config.yaml");
+    let cfg_path = tmp.join("config.toml");
+    let mut f = std::fs::File::create(&cfg_path).expect("create config.toml");
     let scan_root = tmp.display().to_string();
     let proposal_path = tmp.join("proposed.iocs").display().to_string();
-    let yaml_lines = [
-        "log:",
-        "  level: info",
-        "runtime:",
-        "  shutdown_timeout_sec: 5",
-        "paths:",
-        &format!("  scan_roots: [\"{scan_root}\"]"),
-        "  scan_maxdepth: 1",
-        "  scan_window_minutes: 1440",
-        "ioc:",
-        "  ioc_list: \"/dev/null\"",
-        &format!("  proposed_iocs: \"{proposal_path}\""),
-        "allowlist:",
-        "  allowlist: \"/dev/null\"",
-        "  max_files_per_dir: 10",
-        "actions:",
-        "  quarantine_on_ioc_match: false",
-        "  alert_on_unknown: false",
+    let toml_lines = [
+        "log = { level = \"info\" }",
+        "",
+        "[runtime]",
+        "shutdown_timeout_sec = 5",
+        "",
+        "[paths]",
+        &format!("scan_roots = [\"{scan_root}\"]"),
+        "scan_maxdepth = 1",
+        "scan_window_minutes = 1440",
+        "",
+        "[ioc]",
+        "ioc_list = \"/dev/null\"",
+        &format!("proposed_iocs = \"{proposal_path}\""),
+        "",
+        "[allowlist]",
+        "allowlist = \"/dev/null\"",
+        "max_files_per_dir = 10",
+        "",
+        "[actions]",
+        "quarantine_on_ioc_match = false",
+        "alert_on_unknown = false",
     ];
-    for line in &yaml_lines {
+    for line in &toml_lines {
         writeln!(f, "{line}").expect("write config line");
     }
     cfg_path
